@@ -103,7 +103,7 @@ class OffboardBboxNode(Node):
         self.bbox_sub   = self.create_subscription(
             String, '/target_bbox', self.bbox_callback, 10)
         self.status_sub = self.create_subscription(
-            VehicleStatus, '/fmu/out/vehicle_status', self.status_callback, px4_qos)
+            VehicleStatus, '/fmu/out/vehicle_status_v1', self.status_callback, px4_qos)
 
         # ── Publishers ──
         self.cmd_pub           = self.create_publisher(

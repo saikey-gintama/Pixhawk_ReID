@@ -88,22 +88,27 @@ class YoloNode(Node):
         self.monitor = TegraMonitor()
         self.monitor.start()
 
+        # 성능 로그
         log_path = os.path.join(RESULT_DIR, "log.csv")
         self.csv    = open(log_path, "w", newline="")
         self.writer = csv.writer(self.csv)
         self.writer.writerow([
-            "timestamp",
-            "ros_delay_ms",
-            "yolo_infer_ms",
-            "node_latency_ms",
-            "roi_kb",
-            "detections",
-            "gpu_%",
-            "cpu_%",
-            "power_mW",
-            "ram_MB"
+            "timestamp","ros_delay_ms","yolo_infer_ms","node_latency_ms",
+            "roi_kb","detections","gpu_%","cpu_%","power_mW","ram_MB"
         ])
+
+        # 이벤트 로그
+        det_path = os.path.join(RESULT_DIR, "detection_log.csv")
+        self.det_csv = open(det_path, "w", newline="")
+        self.det_writer = csv.writer(self.det_csv)
+        self.det_writer.writerow([
+            "timestamp","event","num_detections","best_conf","best_bbox"
+        ])
+
+        self.prev_detected = False
+
         self.get_logger().info(f"Logging to {log_path}")
+        self.get_logger().info(f"Detection events → {det_path}")
 
     def callback(self, msg):
         t0 = time.perf_counter()
@@ -118,8 +123,7 @@ class YoloNode(Node):
         results = self.model(frame, verbose=False)
         yolo_infer_ms = (time.perf_counter() - t_infer_start) * 1000
 
-        detections    = []
-        has_detection = False
+        detections = []
         if results and len(results[0].boxes) > 0:
             for box in results[0].boxes:
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
@@ -135,14 +139,42 @@ class YoloNode(Node):
                     "conf": round(conf, 3),
                     "bbox": [round(x1), round(y1), round(x2), round(y2)]
                 })
-            has_detection = len(detections) > 0
+        has_detection = len(detections) > 0
 
+        # 이벤트 기반 로깅
+        if has_detection and not self.prev_detected:
+            best = max(detections, key=lambda d: d["conf"])
+            self.det_writer.writerow([
+                time.time(),
+                "DETECTION_START",
+                len(detections),
+                best["conf"],
+                best["bbox"]
+            ])
+            self.det_csv.flush()
+            print(f"[START] {best}")
+
+        elif not has_detection and self.prev_detected:
+            self.det_writer.writerow([
+                time.time(),
+                "DETECTION_END",
+                0,
+                0,
+                []
+            ])
+            self.det_csv.flush()
+            print("[END] detection lost")
+
+        self.prev_detected = has_detection
+
+        # bbox publish
         if has_detection:
             bbox_msg      = String()
             bbox_msg.data = json.dumps(detections)
             self.bbox_pub.publish(bbox_msg)
 
-        roi     = get_roi(frame)
+        # ROI publish
+        roi = get_roi(frame)
         roi_msg = self.bridge.cv2_to_imgmsg(roi, encoding='bgr8')
         roi_msg.header.stamp = msg.header.stamp
         self.roi_pub.publish(roi_msg)
@@ -179,6 +211,7 @@ class YoloNode(Node):
     def destroy_node(self):
         self.monitor.stop()
         self.csv.close()
+        self.det_csv.close()
         super().destroy_node()
 
 

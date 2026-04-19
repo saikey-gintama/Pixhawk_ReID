@@ -3,6 +3,12 @@
 # run_experiment.sh
 # 실행: bash run_experiment.sh
 # 종료: Ctrl+C → 모든 노드 자동 종료
+# 결과:
+#   - log.csv            : 매 프레임 성능 로그
+#   - detection_log.csv  : 이벤트 기반 탐지 로그
+#   - event_log.csv      : offboard FSM 이벤트 로그
+#   - bw_camera.txt      : /camera 대역폭
+#   - bw_roi.txt         : /target_roi 대역폭
 # ============================================================
 
 source /opt/ros/humble/setup.bash
@@ -21,8 +27,13 @@ NODE_DIR=~/jeongin/Pixhawk_ReID/ros2_nodes
 cleanup() {
     echo ""
     echo "[INFO] 종료 중..."
-    kill $PID_AGENT $PID_CAM $PID_YOLO $PID_OFFBOARD $PID_BW_CAM $PID_BW_ROI 2>/dev/null
-    wait $PID_AGENT $PID_CAM $PID_YOLO $PID_OFFBOARD $PID_BW_CAM $PID_BW_ROI 2>/dev/null
+
+    kill $PID_TAIL $PID_BW_CAM $PID_BW_ROI 2>/dev/null
+    kill $PID_AGENT $PID_CAM $PID_YOLO $PID_OFFBOARD 2>/dev/null
+
+    wait $PID_AGENT $PID_CAM $PID_YOLO $PID_OFFBOARD \
+         $PID_BW_CAM $PID_BW_ROI $PID_TAIL 2>/dev/null
+
     echo "[INFO] 완료. 결과: $RESULT_DIR"
     ls "$RESULT_DIR"
     exit 0
@@ -54,8 +65,8 @@ python3 offboard_node.py > "$RESULT_DIR/offboard_node.log" 2>&1 &
 PID_OFFBOARD=$!
 sleep 1
 
-# ── 실험 1: 대역폭 측정 ──
-echo "[실험1] 대역폭 측정 시작..."
+# ── 대역폭 측정 ──
+echo "[실험] 대역폭 측정 시작..."
 ros2 topic bw /camera     > "$RESULT_DIR/bw_camera.txt" 2>&1 &
 PID_BW_CAM=$!
 ros2 topic bw /target_roi > "$RESULT_DIR/bw_roi.txt"    2>&1 &
@@ -68,8 +79,15 @@ echo " 카메라 앞에 타겟을 갖다 대세요"
 echo " 종료: Ctrl+C"
 echo "================================================"
 echo ""
+echo "[INFO] 주요 결과 파일"
+echo "  - $RESULT_DIR/log.csv"
+echo "  - $RESULT_DIR/detection_log.csv"
+echo "  - $RESULT_DIR/event_log.csv"
+echo "  - $RESULT_DIR/bw_camera.txt"
+echo "  - $RESULT_DIR/bw_roi.txt"
+echo ""
 
-# 실시간 yolo 로그 출력
+# ── 실시간 yolo 로그 출력 ──
 tail -f "$RESULT_DIR/yolo_node.log" &
 PID_TAIL=$!
 
