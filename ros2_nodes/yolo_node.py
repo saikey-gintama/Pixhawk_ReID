@@ -16,6 +16,12 @@ from ultralytics import YOLO
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 RESULT_DIR = os.environ.get("RESULT_DIR", ".")
 
+# ═══════════════════════════════════════════════════════
+# ▶ 필터링 파라미터  ← 여기만 바꾸면 됩니다
+# ═══════════════════════════════════════════════════════
+CONF_THRESHOLD = 0.45   # 이 값 미만 bbox 무시
+TARGET_CLASS   = 0      # COCO class 0 = person  (-1 이면 전체 허용)
+
 # -------------------------------
 # tegrastats
 # -------------------------------
@@ -115,16 +121,21 @@ class YoloNode(Node):
         detections    = []
         has_detection = False
         if results and len(results[0].boxes) > 0:
-            has_detection = True
             for box in results[0].boxes:
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
                 conf = float(box.conf[0])
                 cls  = int(box.cls[0])
+                # conf + class 필터
+                if conf < CONF_THRESHOLD:
+                    continue
+                if TARGET_CLASS != -1 and cls != TARGET_CLASS:
+                    continue
                 detections.append({
                     "cls":  cls,
                     "conf": round(conf, 3),
                     "bbox": [round(x1), round(y1), round(x2), round(y2)]
                 })
+            has_detection = len(detections) > 0
 
         if has_detection:
             bbox_msg      = String()
