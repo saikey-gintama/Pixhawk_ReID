@@ -54,21 +54,12 @@ class TegraMonitor:
 
 
 # -------------------------------
-# ROI (중앙 50%)
-# -------------------------------
-def get_roi(frame):
-    h, w, _ = frame.shape
-    return frame[h // 4:3 * h // 4, w // 4:3 * w // 4]
-
-
-# -------------------------------
 # YOLO Node (TensorRT FP16)
 # -------------------------------
 class YoloNode(Node):
     def __init__(self):
         super().__init__('yolo_node')
 
-        # Subscriber: 카메라 프레임
         self.sub = self.create_subscription(
             Image,
             '/camera',
@@ -76,15 +67,14 @@ class YoloNode(Node):
             10
         )
 
-        # Publisher 1: ROI 이미지 (대역폭 비교용)
+        # Publisher 1: 탐지된 bbox 크롭 이미지 (탐지 시만 발행)
         self.roi_pub = self.create_publisher(Image, '/target_roi', 10)
 
-        # Publisher 2: BBox JSON (제어 명령용)
+        # Publisher 2: BBox JSON (탐지 시만 발행)
         self.bbox_pub = self.create_publisher(String, '/target_bbox', 10)
 
         self.bridge = CvBridge()
 
-        # TensorRT FP16 모델 로드
         self.get_logger().info("Loading TensorRT FP16 model...")
         self.model = YOLO(os.path.join(BASE_DIR, "../models/yolo26n.engine"))
         self.get_logger().info("Model loaded.")
@@ -96,11 +86,11 @@ class YoloNode(Node):
         self.writer = csv.writer(self.csv)
         self.writer.writerow([
             "timestamp",
-            "ros_delay_ms",       # camera → yolo_node 전송 지연
-            "yolo_infer_ms",      # YOLO 추론 시간
-            "node_latency_ms",    # 전체 콜백 처리 시간
-            "roi_kb",             # ROI JPEG 크기
-            "detections",         # 탐지 객체 수
+            "ros_delay_ms",
+            "yolo_infer_ms",
+            "node_latency_ms",
+            "roi_kb",       # 탐지 없으면 0
+            "detections",
             "gpu_%",
             "cpu_%",
             "power_mW",
@@ -125,34 +115,42 @@ class YoloNode(Node):
 
         # ── 탐지 결과 파싱 ──
         detections = []
-        has_detection = False
+        roi_kb = 0.0
+
         if results and len(results[0].boxes) > 0:
-            has_detection = True
             for box in results[0].boxes:
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                x1, y1, x2, y2 = [int(v) for v in box.xyxy[0].tolist()]
                 conf = float(box.conf[0])
-                cls = int(box.cls[0])
+                cls  = int(box.cls[0])
                 detections.append({
-                    "cls": cls,
+                    "cls":  cls,
                     "conf": round(conf, 3),
-                    "bbox": [round(x1), round(y1), round(x2), round(y2)]
+                    "bbox": [x1, y1, x2, y2]
                 })
 
-        # ── BBox JSON 발행 (이벤트 기반: 탐지 시만) ──
-        if has_detection:
+            # ── 신뢰도 가장 높은 bbox로 ROI 크롭 후 발행 ──
+            best = max(detections, key=lambda d: d["conf"])
+            x1, y1, x2, y2 = best["bbox"]
+
+            # 프레임 경계 클램핑 (bbox가 프레임 밖으로 나가는 경우 방어)
+            h, w = frame.shape[:2]
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(w, x2), min(h, y2)
+
+            roi = frame[y1:y2, x1:x2]
+
+            if roi.size > 0:
+                roi_msg = self.bridge.cv2_to_imgmsg(roi, encoding='bgr8')
+                roi_msg.header.stamp = msg.header.stamp
+                self.roi_pub.publish(roi_msg)
+
+                _, buffer = cv2.imencode('.jpg', roi, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                roi_kb = len(buffer) / 1024
+
+            # ── BBox JSON 발행 ──
             bbox_msg = String()
             bbox_msg.data = json.dumps(detections)
             self.bbox_pub.publish(bbox_msg)
-
-        # ── ROI 이미지 발행 (대역폭 비교용: 항상 발행) ──
-        roi = get_roi(frame)
-        roi_msg = self.bridge.cv2_to_imgmsg(roi, encoding='bgr8')
-        roi_msg.header.stamp = msg.header.stamp
-        self.roi_pub.publish(roi_msg)
-
-        # ── ROI 크기 측정 (KB) ──
-        _, buffer = cv2.imencode('.jpg', roi, [cv2.IMWRITE_JPEG_QUALITY, 80])
-        roi_kb = len(buffer) / 1024
 
         # ── 전체 콜백 지연 ──
         node_latency_ms = (time.perf_counter() - t0) * 1000
