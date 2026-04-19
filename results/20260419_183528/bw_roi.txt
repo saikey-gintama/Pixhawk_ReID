@@ -1,0 +1,63 @@
+WARNING: topic [/target_roi] does not appear to be published yet
+Subscribed to [/target_roi]
+10.22 MB/s from 15 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+9.74 MB/s from 46 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+9.78 MB/s from 78 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+9.80 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+9.75 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+9.78 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+9.66 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+9.74 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+9.78 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+9.84 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+9.86 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+9.82 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+9.76 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+9.91 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+10.27 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+10.63 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+10.82 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+10.78 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+10.80 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+11.05 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+11.13 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+11.19 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+11.16 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+11.18 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+10.93 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+10.67 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+10.52 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+10.52 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+10.36 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+10.20 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
