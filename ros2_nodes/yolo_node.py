@@ -10,10 +10,11 @@ import threading
 import re
 import csv
 import json
+import os
 from ultralytics import YOLO
 
-import os
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
+RESULT_DIR = os.environ.get("RESULT_DIR", ".")
 
 # -------------------------------
 # tegrastats
@@ -54,7 +55,7 @@ class TegraMonitor:
 
 
 # -------------------------------
-# ROI (중앙 50%)
+# ROI (중앙 50%) - 대역폭 비교용 고정 크롭
 # -------------------------------
 def get_roi(frame):
     h, w, _ = frame.shape
@@ -68,23 +69,12 @@ class YoloNode(Node):
     def __init__(self):
         super().__init__('yolo_node')
 
-        # Subscriber: 카메라 프레임
-        self.sub = self.create_subscription(
-            Image,
-            '/camera',
-            self.callback,
-            10
-        )
-
-        # Publisher 1: ROI 이미지 (대역폭 비교용)
-        self.roi_pub = self.create_publisher(Image, '/target_roi', 10)
-
-        # Publisher 2: BBox JSON (제어 명령용)
-        self.bbox_pub = self.create_publisher(String, '/target_bbox', 10)
+        self.sub      = self.create_subscription(Image,  '/camera',       self.callback, 10)
+        self.roi_pub  = self.create_publisher(   Image,  '/target_roi',   10)
+        self.bbox_pub = self.create_publisher(   String, '/target_bbox',  10)
 
         self.bridge = CvBridge()
 
-        # TensorRT FP16 모델 로드
         self.get_logger().info("Loading TensorRT FP16 model...")
         self.model = YOLO(os.path.join(BASE_DIR, "../models/yolo26n.engine"))
         self.get_logger().info("Model loaded.")
@@ -92,72 +82,65 @@ class YoloNode(Node):
         self.monitor = TegraMonitor()
         self.monitor.start()
 
-        self.csv = open("log.csv", "w", newline="")
+        log_path = os.path.join(RESULT_DIR, "log.csv")
+        self.csv    = open(log_path, "w", newline="")
         self.writer = csv.writer(self.csv)
         self.writer.writerow([
             "timestamp",
-            "ros_delay_ms",       # camera → yolo_node 전송 지연
-            "yolo_infer_ms",      # YOLO 추론 시간
-            "node_latency_ms",    # 전체 콜백 처리 시간
-            "roi_kb",             # ROI JPEG 크기
-            "detections",         # 탐지 객체 수
+            "ros_delay_ms",
+            "yolo_infer_ms",
+            "node_latency_ms",
+            "roi_kb",
+            "detections",
             "gpu_%",
             "cpu_%",
             "power_mW",
             "ram_MB"
         ])
+        self.get_logger().info(f"Logging to {log_path}")
 
     def callback(self, msg):
         t0 = time.perf_counter()
 
-        # ── ROS end-to-end delay ──
-        now = self.get_clock().now()
-        sent = rclpy.time.Time.from_msg(msg.header.stamp)
-        ros_delay = (now - sent).nanoseconds / 1e6  # ms
+        now   = self.get_clock().now()
+        sent  = rclpy.time.Time.from_msg(msg.header.stamp)
+        ros_delay = (now - sent).nanoseconds / 1e6
 
-        # ── 프레임 변환 ──
         frame = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
 
-        # ── YOLO 추론 (전체 프레임) ──
         t_infer_start = time.perf_counter()
         results = self.model(frame, verbose=False)
         yolo_infer_ms = (time.perf_counter() - t_infer_start) * 1000
 
-        # ── 탐지 결과 파싱 ──
-        detections = []
+        detections    = []
         has_detection = False
         if results and len(results[0].boxes) > 0:
             has_detection = True
             for box in results[0].boxes:
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
                 conf = float(box.conf[0])
-                cls = int(box.cls[0])
+                cls  = int(box.cls[0])
                 detections.append({
-                    "cls": cls,
+                    "cls":  cls,
                     "conf": round(conf, 3),
                     "bbox": [round(x1), round(y1), round(x2), round(y2)]
                 })
 
-        # ── BBox JSON 발행 (이벤트 기반: 탐지 시만) ──
         if has_detection:
-            bbox_msg = String()
+            bbox_msg      = String()
             bbox_msg.data = json.dumps(detections)
             self.bbox_pub.publish(bbox_msg)
 
-        # ── ROI 이미지 발행 (대역폭 비교용: 항상 발행) ──
-        roi = get_roi(frame)
+        roi     = get_roi(frame)
         roi_msg = self.bridge.cv2_to_imgmsg(roi, encoding='bgr8')
         roi_msg.header.stamp = msg.header.stamp
         self.roi_pub.publish(roi_msg)
 
-        # ── ROI 크기 측정 (KB) ──
         _, buffer = cv2.imencode('.jpg', roi, [cv2.IMWRITE_JPEG_QUALITY, 80])
         roi_kb = len(buffer) / 1024
 
-        # ── 전체 콜백 지연 ──
         node_latency_ms = (time.perf_counter() - t0) * 1000
 
-        # ── 리소스 기록 ──
         stats = self.monitor.data
         self.writer.writerow([
             time.time(),
