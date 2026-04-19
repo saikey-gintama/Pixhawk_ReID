@@ -1,0 +1,126 @@
+WARNING: topic [/target_roi] does not appear to be published yet
+Subscribed to [/target_roi]
+11.49 MB/s from 23 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+12.55 MB/s from 66 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.27 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.26 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.24 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.41 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.40 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.49 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.66 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.52 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.51 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.54 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.53 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.56 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.41 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.30 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.43 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.41 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.49 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.39 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.39 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.38 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.45 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.52 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.44 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.45 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.53 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.57 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.43 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.33 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.27 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.25 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.40 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.37 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.50 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.50 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.54 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.43 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.61 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.66 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.51 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.43 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.38 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.62 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.56 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.36 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.23 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.26 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.29 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.32 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.29 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.25 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.39 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.45 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.37 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.39 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.54 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.59 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.35 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.24 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.22 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB
+13.27 MB/s from 100 messages
+	Message size mean: 0.31 MB min: 0.31 MB max: 0.31 MB

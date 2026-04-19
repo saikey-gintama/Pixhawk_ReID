@@ -1,0 +1,194 @@
+Subscribed to [/camera]
+69.29 MB/s from 55 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+73.23 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+73.07 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+73.76 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+74.56 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+74.50 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+74.42 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+74.34 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+72.81 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+72.09 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+71.99 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+69.28 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+69.21 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+70.55 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+72.49 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+66.04 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+66.54 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+70.89 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+70.28 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+65.28 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+61.39 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+69.46 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+71.41 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+71.38 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+69.37 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+65.62 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+65.56 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+67.35 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+65.56 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+66.71 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+68.51 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+67.23 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+68.48 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+69.07 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+63.66 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+55.49 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+54.60 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+55.87 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+53.83 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+60.49 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+58.10 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+50.57 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+51.18 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+54.99 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+50.47 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+53.76 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+55.33 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+54.91 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+51.46 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+50.04 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+54.09 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+56.54 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+56.94 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+54.05 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+50.70 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+47.38 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+49.61 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+48.33 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+47.36 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+51.01 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+56.89 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+62.06 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+60.93 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+58.64 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+59.94 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+60.02 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+56.34 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+50.88 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+50.17 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+54.16 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+54.63 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+53.42 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+47.59 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+48.18 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+50.81 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+54.54 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+66.91 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+66.31 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+56.14 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+51.45 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+56.76 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+54.08 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+56.11 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+62.24 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+59.26 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+59.28 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+54.83 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+50.66 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+47.39 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+52.20 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+51.00 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+52.07 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+52.83 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+49.23 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+53.14 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+64.82 MB/s from 100 messages
+	Message size mean: 1.23 MB min: 1.23 MB max: 1.23 MB
+failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241

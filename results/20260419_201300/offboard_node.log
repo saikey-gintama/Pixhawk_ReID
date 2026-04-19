@@ -1,0 +1,644 @@
+[INFO] [1776597196.106840723] [offboard_node]: Logging to /home/moon/jeongin/Pixhawk_ReID/results/20260419_201300/event_log.csv
+[INFO] [1776597196.107874264] [offboard_node]: offboard_node ready. Waiting for detections on /target_bbox ...
+[INFO] [1776597236.846796845] [offboard_node]: Detection! Transitioning IDLE → TRACKING
+[INFO] [1776597236.909480232] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597236.910415737] [offboard_node]: ARM command sent
+[INFO] [1776597237.009245765] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597237.010212379] [offboard_node]: ARM command sent
+[INFO] [1776597237.109450616] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597237.110403696] [offboard_node]: ARM command sent
+[INFO] [1776597237.209413149] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597237.210355416] [offboard_node]: ARM command sent
+[INFO] [1776597237.309331980] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597237.310262281] [offboard_node]: ARM command sent
+[INFO] [1776597237.409075103] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597237.410056626] [offboard_node]: ARM command sent
+[INFO] [1776597237.509503331] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597237.510436416] [offboard_node]: ARM command sent
+[INFO] [1776597237.609323750] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597237.610306424] [offboard_node]: ARM command sent
+[INFO] [1776597237.709262193] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597237.710203052] [offboard_node]: ARM command sent
+[INFO] [1776597237.809433739] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597237.810390370] [offboard_node]: ARM command sent
+[INFO] [1776597237.909288007] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597237.910214916] [offboard_node]: ARM command sent
+[INFO] [1776597238.009350131] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597238.010422239] [offboard_node]: ARM command sent
+[INFO] [1776597238.109449353] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597238.110412075] [offboard_node]: ARM command sent
+[INFO] [1776597238.209286195] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597238.210245845] [offboard_node]: ARM command sent
+[INFO] [1776597238.308841044] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597238.309842798] [offboard_node]: ARM command sent
+[INFO] [1776597238.409462083] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597238.410480857] [offboard_node]: ARM command sent
+[INFO] [1776597238.509334022] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597238.510329313] [offboard_node]: ARM command sent
+[INFO] [1776597238.608914786] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597238.610024742] [offboard_node]: ARM command sent
+[INFO] [1776597238.709412457] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597238.710490452] [offboard_node]: ARM command sent
+[INFO] [1776597238.809289163] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597238.810629857] [offboard_node]: ARM command sent
+[INFO] [1776597238.909202021] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597238.910098580] [offboard_node]: ARM command sent
+[INFO] [1776597239.009525323] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597239.010614336] [offboard_node]: ARM command sent
+[INFO] [1776597239.109450250] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597239.110763765] [offboard_node]: ARM command sent
+[INFO] [1776597239.209260734] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597239.210610370] [offboard_node]: ARM command sent
+[INFO] [1776597239.309195387] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597239.310161639] [offboard_node]: ARM command sent
+[INFO] [1776597239.409497203] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597239.410457120] [offboard_node]: ARM command sent
+[INFO] [1776597239.509250770] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597239.510194210] [offboard_node]: ARM command sent
+[INFO] [1776597239.609621790] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597239.611214644] [offboard_node]: ARM command sent
+[INFO] [1776597239.709305738] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597239.710551393] [offboard_node]: ARM command sent
+[INFO] [1776597239.809516243] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597239.810484158] [offboard_node]: ARM command sent
+[INFO] [1776597239.909612722] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597239.910788502] [offboard_node]: ARM command sent
+[INFO] [1776597240.009494482] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597240.010489251] [offboard_node]: ARM command sent
+[INFO] [1776597240.109267119] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597240.110242276] [offboard_node]: ARM command sent
+[INFO] [1776597240.209390926] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597240.210351173] [offboard_node]: ARM command sent
+[INFO] [1776597240.309446105] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597240.310715354] [offboard_node]: ARM command sent
+[INFO] [1776597240.409573368] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597240.410876467] [offboard_node]: ARM command sent
+[INFO] [1776597240.509804900] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597240.511196560] [offboard_node]: ARM command sent
+[INFO] [1776597240.609831860] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597240.611037888] [offboard_node]: ARM command sent
+[INFO] [1776597240.708981855] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597240.709891487] [offboard_node]: ARM command sent
+[INFO] [1776597240.809541617] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597240.810522757] [offboard_node]: ARM command sent
+[INFO] [1776597240.909459029] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597240.910430218] [offboard_node]: ARM command sent
+[INFO] [1776597241.009282121] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597241.010379412] [offboard_node]: ARM command sent
+[INFO] [1776597241.109435239] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597241.110523571] [offboard_node]: ARM command sent
+[INFO] [1776597241.209319505] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597241.210349895] [offboard_node]: ARM command sent
+[INFO] [1776597241.309248596] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597241.310193143] [offboard_node]: ARM command sent
+[INFO] [1776597241.408914114] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597241.410456739] [offboard_node]: ARM command sent
+[INFO] [1776597241.509426532] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597241.510442812] [offboard_node]: ARM command sent
+[INFO] [1776597241.609303311] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597241.610239093] [offboard_node]: ARM command sent
+[INFO] [1776597241.709241073] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597241.710203154] [offboard_node]: ARM command sent
+[INFO] [1776597241.809402445] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597241.810535954] [offboard_node]: ARM command sent
+[INFO] [1776597241.909315538] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597241.910284626] [offboard_node]: ARM command sent
+[INFO] [1776597242.009852682] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597242.010888586] [offboard_node]: ARM command sent
+[INFO] [1776597242.109364078] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597242.110315387] [offboard_node]: ARM command sent
+[INFO] [1776597242.209849467] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597242.211291355] [offboard_node]: ARM command sent
+[INFO] [1776597242.310360771] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597242.311647484] [offboard_node]: ARM command sent
+[INFO] [1776597242.410488455] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597242.411773088] [offboard_node]: ARM command sent
+[INFO] [1776597242.509131761] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597242.510050083] [offboard_node]: ARM command sent
+[INFO] [1776597242.609546953] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597242.610515347] [offboard_node]: ARM command sent
+[INFO] [1776597242.710059345] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597242.711015069] [offboard_node]: ARM command sent
+[INFO] [1776597242.809085664] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597242.810149691] [offboard_node]: ARM command sent
+[INFO] [1776597242.909393064] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597242.910357811] [offboard_node]: ARM command sent
+[INFO] [1776597243.008955443] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597243.010335115] [offboard_node]: ARM command sent
+[INFO] [1776597243.109544055] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597243.110519177] [offboard_node]: ARM command sent
+[INFO] [1776597243.209381351] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597243.210359257] [offboard_node]: ARM command sent
+[INFO] [1776597243.309405596] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597243.310558005] [offboard_node]: ARM command sent
+[INFO] [1776597243.409420211] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597243.410391430] [offboard_node]: ARM command sent
+[INFO] [1776597243.509377266] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597243.510386463] [offboard_node]: ARM command sent
+[INFO] [1776597243.609527221] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597243.610524228] [offboard_node]: ARM command sent
+[INFO] [1776597243.709352647] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597243.710342583] [offboard_node]: ARM command sent
+[INFO] [1776597243.809186232] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597243.810287608] [offboard_node]: ARM command sent
+[INFO] [1776597243.909327516] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597243.910236504] [offboard_node]: ARM command sent
+[INFO] [1776597244.009152350] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597244.010125690] [offboard_node]: ARM command sent
+[INFO] [1776597244.109531077] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597244.110581815] [offboard_node]: ARM command sent
+[INFO] [1776597244.209347928] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597244.210363247] [offboard_node]: ARM command sent
+[INFO] [1776597244.309105300] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597244.310184450] [offboard_node]: ARM command sent
+[INFO] [1776597244.409454047] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597244.410458839] [offboard_node]: ARM command sent
+[INFO] [1776597244.509320364] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597244.523557604] [offboard_node]: ARM command sent
+[INFO] [1776597244.609265774] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597244.610483689] [offboard_node]: ARM command sent
+[INFO] [1776597244.709327776] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597244.710295037] [offboard_node]: ARM command sent
+[INFO] [1776597244.808832861] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597244.809898509] [offboard_node]: ARM command sent
+[INFO] [1776597244.909555382] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597244.910529554] [offboard_node]: ARM command sent
+[INFO] [1776597245.009362715] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597245.010758475] [offboard_node]: ARM command sent
+[INFO] [1776597245.109343228] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597245.110447409] [offboard_node]: ARM command sent
+[INFO] [1776597245.209335451] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597245.210476651] [offboard_node]: ARM command sent
+[INFO] [1776597245.309262115] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597245.310660626] [offboard_node]: ARM command sent
+[INFO] [1776597245.409525504] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597245.410704747] [offboard_node]: ARM command sent
+[INFO] [1776597245.508884047] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597245.510211719] [offboard_node]: ARM command sent
+[INFO] [1776597245.609497376] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597245.611015456] [offboard_node]: ARM command sent
+[INFO] [1776597245.709406569] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597245.710608242] [offboard_node]: ARM command sent
+[INFO] [1776597245.809060051] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597245.810019290] [offboard_node]: ARM command sent
+[INFO] [1776597245.909501626] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597245.910560820] [offboard_node]: ARM command sent
+[INFO] [1776597246.009392213] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597246.011081359] [offboard_node]: ARM command sent
+[INFO] [1776597246.109509996] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597246.110592461] [offboard_node]: ARM command sent
+[INFO] [1776597246.209394655] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597246.210491870] [offboard_node]: ARM command sent
+[INFO] [1776597246.308993842] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597246.310379344] [offboard_node]: ARM command sent
+[INFO] [1776597246.409392329] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597246.410569535] [offboard_node]: ARM command sent
+[INFO] [1776597246.509356562] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597246.510395224] [offboard_node]: ARM command sent
+[INFO] [1776597246.609104980] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597246.611393288] [offboard_node]: ARM command sent
+[INFO] [1776597246.709308833] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597246.710511572] [offboard_node]: ARM command sent
+[INFO] [1776597246.809401627] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597246.810610286] [offboard_node]: ARM command sent
+[INFO] [1776597246.909260976] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597246.910562904] [offboard_node]: ARM command sent
+[INFO] [1776597247.009395315] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597247.010582963] [offboard_node]: ARM command sent
+[INFO] [1776597247.109505879] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597247.111261208] [offboard_node]: ARM command sent
+[INFO] [1776597247.209435533] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597247.212056689] [offboard_node]: ARM command sent
+[INFO] [1776597247.309125246] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597247.310581473] [offboard_node]: ARM command sent
+[INFO] [1776597247.410824661] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597247.412110698] [offboard_node]: ARM command sent
+[INFO] [1776597247.509578828] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597247.510748429] [offboard_node]: ARM command sent
+[INFO] [1776597247.609201348] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597247.610796055] [offboard_node]: ARM command sent
+[INFO] [1776597247.709568203] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597247.710736557] [offboard_node]: ARM command sent
+[INFO] [1776597247.809019094] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597247.810096449] [offboard_node]: ARM command sent
+[INFO] [1776597247.909976190] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597247.911894382] [offboard_node]: ARM command sent
+[INFO] [1776597248.009502349] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597248.010820426] [offboard_node]: ARM command sent
+[INFO] [1776597248.109298432] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597248.110839398] [offboard_node]: ARM command sent
+[INFO] [1776597248.209612607] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597248.210874849] [offboard_node]: ARM command sent
+[INFO] [1776597248.309489930] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597248.311795875] [offboard_node]: ARM command sent
+[INFO] [1776597248.409601917] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597248.411532604] [offboard_node]: ARM command sent
+[INFO] [1776597248.509429260] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597248.510561819] [offboard_node]: ARM command sent
+[INFO] [1776597248.608917502] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597248.610301012] [offboard_node]: ARM command sent
+[INFO] [1776597248.709623446] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597248.711672105] [offboard_node]: ARM command sent
+[INFO] [1776597248.810270867] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597248.811815833] [offboard_node]: ARM command sent
+[INFO] [1776597248.910069382] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597248.911552082] [offboard_node]: ARM command sent
+[INFO] [1776597249.009846729] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597249.011519535] [offboard_node]: ARM command sent
+[INFO] [1776597249.110119651] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597249.111815687] [offboard_node]: ARM command sent
+[INFO] [1776597249.209360347] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597249.211021763] [offboard_node]: ARM command sent
+[INFO] [1776597249.309554300] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597249.310783948] [offboard_node]: ARM command sent
+[INFO] [1776597249.409962954] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597249.411834878] [offboard_node]: ARM command sent
+[INFO] [1776597249.509838088] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597249.527626346] [offboard_node]: ARM command sent
+[INFO] [1776597249.609088864] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597249.610188571] [offboard_node]: ARM command sent
+[INFO] [1776597249.709842573] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597249.710919691] [offboard_node]: ARM command sent
+[INFO] [1776597249.809922969] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597249.811053361] [offboard_node]: ARM command sent
+[INFO] [1776597249.910018851] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597249.911051204] [offboard_node]: ARM command sent
+[INFO] [1776597250.009542348] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597250.011279291] [offboard_node]: ARM command sent
+[INFO] [1776597250.109846752] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597250.111153619] [offboard_node]: ARM command sent
+[INFO] [1776597250.209641631] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597250.210714278] [offboard_node]: ARM command sent
+[INFO] [1776597250.309686121] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597250.310687478] [offboard_node]: ARM command sent
+[INFO] [1776597250.409291096] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597250.410331969] [offboard_node]: ARM command sent
+[INFO] [1776597250.510740429] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597250.511757528] [offboard_node]: ARM command sent
+[INFO] [1776597250.609519425] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597250.610875343] [offboard_node]: ARM command sent
+[INFO] [1776597250.709366171] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597250.711203842] [offboard_node]: ARM command sent
+[INFO] [1776597250.809532187] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597250.810553126] [offboard_node]: ARM command sent
+[INFO] [1776597250.910023008] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597250.911020685] [offboard_node]: ARM command sent
+[INFO] [1776597251.009510018] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597251.010616622] [offboard_node]: ARM command sent
+[INFO] [1776597251.109258661] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597251.110252825] [offboard_node]: ARM command sent
+[INFO] [1776597251.209795276] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597251.211264508] [offboard_node]: ARM command sent
+[INFO] [1776597251.309741248] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597251.311370660] [offboard_node]: ARM command sent
+[INFO] [1776597251.409424104] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597251.410436475] [offboard_node]: ARM command sent
+[INFO] [1776597251.509889140] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597251.511121911] [offboard_node]: ARM command sent
+[INFO] [1776597251.609378027] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597251.610433883] [offboard_node]: ARM command sent
+[INFO] [1776597251.710566464] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597251.711548630] [offboard_node]: ARM command sent
+[INFO] [1776597251.809337710] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597251.810457017] [offboard_node]: ARM command sent
+[INFO] [1776597251.909773820] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597251.910999487] [offboard_node]: ARM command sent
+[INFO] [1776597252.009593570] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597252.010619932] [offboard_node]: ARM command sent
+[INFO] [1776597252.109852426] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597252.111059480] [offboard_node]: ARM command sent
+[INFO] [1776597252.209625300] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597252.210620272] [offboard_node]: ARM command sent
+[INFO] [1776597252.309457241] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597252.310417655] [offboard_node]: ARM command sent
+[INFO] [1776597252.409725281] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597252.410792407] [offboard_node]: ARM command sent
+[INFO] [1776597252.509413328] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597252.510367438] [offboard_node]: ARM command sent
+[INFO] [1776597252.609852364] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597252.611458621] [offboard_node]: ARM command sent
+[INFO] [1776597252.709840518] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597252.711062578] [offboard_node]: ARM command sent
+[INFO] [1776597252.811514637] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597252.813639452] [offboard_node]: ARM command sent
+[INFO] [1776597252.909466036] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597252.910468495] [offboard_node]: ARM command sent
+[INFO] [1776597253.009637001] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597253.010867710] [offboard_node]: ARM command sent
+[INFO] [1776597253.109425475] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597253.110469251] [offboard_node]: ARM command sent
+[INFO] [1776597253.209236731] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597253.210240061] [offboard_node]: ARM command sent
+[INFO] [1776597253.309426331] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597253.310543927] [offboard_node]: ARM command sent
+[INFO] [1776597253.409603005] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597253.410606624] [offboard_node]: ARM command sent
+[INFO] [1776597253.509451571] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597253.510478868] [offboard_node]: ARM command sent
+[INFO] [1776597253.609500732] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597253.610468065] [offboard_node]: ARM command sent
+[INFO] [1776597253.709368977] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597253.712037389] [offboard_node]: ARM command sent
+[INFO] [1776597253.809502485] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597253.810734250] [offboard_node]: ARM command sent
+[INFO] [1776597253.909402408] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597253.912480075] [offboard_node]: ARM command sent
+[INFO] [1776597254.009317149] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597254.010467007] [offboard_node]: ARM command sent
+[INFO] [1776597254.109499068] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597254.113087577] [offboard_node]: ARM command sent
+[INFO] [1776597254.209478566] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597254.210897049] [offboard_node]: ARM command sent
+[INFO] [1776597254.309450448] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597254.311807952] [offboard_node]: ARM command sent
+[INFO] [1776597254.409603600] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597254.412226946] [offboard_node]: ARM command sent
+[INFO] [1776597254.509366502] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597254.520008228] [offboard_node]: ARM command sent
+[INFO] [1776597254.609405996] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597254.610435956] [offboard_node]: ARM command sent
+[INFO] [1776597254.710666384] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597254.712085955] [offboard_node]: ARM command sent
+[INFO] [1776597254.812869761] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597254.814260725] [offboard_node]: ARM command sent
+[INFO] [1776597254.909452707] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597254.910747293] [offboard_node]: ARM command sent
+[INFO] [1776597255.009327861] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597255.010319398] [offboard_node]: ARM command sent
+[INFO] [1776597255.109697458] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597255.111393026] [offboard_node]: ARM command sent
+[INFO] [1776597255.209442861] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597255.210999459] [offboard_node]: ARM command sent
+[INFO] [1776597255.310306963] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597255.313354242] [offboard_node]: ARM command sent
+[INFO] [1776597255.410455515] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597255.411746173] [offboard_node]: ARM command sent
+[INFO] [1776597255.509438234] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597255.510772410] [offboard_node]: ARM command sent
+[INFO] [1776597255.611729500] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597255.612874277] [offboard_node]: ARM command sent
+[INFO] [1776597255.711316126] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597255.712555075] [offboard_node]: ARM command sent
+[INFO] [1776597255.810390649] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597255.811563137] [offboard_node]: ARM command sent
+[INFO] [1776597255.909899551] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597255.910875760] [offboard_node]: ARM command sent
+[INFO] [1776597256.010375135] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597256.011883682] [offboard_node]: ARM command sent
+[INFO] [1776597256.110104426] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597256.111432692] [offboard_node]: ARM command sent
+[INFO] [1776597256.209491107] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597256.210554776] [offboard_node]: ARM command sent
+[INFO] [1776597256.309916561] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597256.311715688] [offboard_node]: ARM command sent
+[INFO] [1776597256.410593269] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597256.411510800] [offboard_node]: ARM command sent
+[INFO] [1776597256.509479235] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597256.510417628] [offboard_node]: ARM command sent
+[INFO] [1776597256.609650235] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597256.610681393] [offboard_node]: ARM command sent
+[INFO] [1776597256.710691344] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597256.712136885] [offboard_node]: ARM command sent
+[INFO] [1776597256.809660442] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597256.810821483] [offboard_node]: ARM command sent
+[INFO] [1776597256.909803988] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597256.910957445] [offboard_node]: ARM command sent
+[INFO] [1776597257.010130316] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597257.011129450] [offboard_node]: ARM command sent
+[INFO] [1776597257.110915053] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597257.112322045] [offboard_node]: ARM command sent
+[INFO] [1776597257.209648309] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597257.210883659] [offboard_node]: ARM command sent
+[INFO] [1776597257.310233245] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597257.311312184] [offboard_node]: ARM command sent
+[INFO] [1776597257.409472852] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597257.410472881] [offboard_node]: ARM command sent
+[INFO] [1776597257.509989374] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597257.511250290] [offboard_node]: ARM command sent
+[INFO] [1776597257.609738499] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597257.610666723] [offboard_node]: ARM command sent
+[INFO] [1776597257.710510212] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597257.711426885] [offboard_node]: ARM command sent
+[INFO] [1776597257.809853943] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597257.810795223] [offboard_node]: ARM command sent
+[INFO] [1776597257.911011403] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597257.912217473] [offboard_node]: ARM command sent
+[INFO] [1776597258.009613977] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597258.010806071] [offboard_node]: ARM command sent
+[INFO] [1776597258.109644637] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597258.110668960] [offboard_node]: ARM command sent
+[INFO] [1776597258.209495622] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597258.210606438] [offboard_node]: ARM command sent
+[INFO] [1776597258.310485230] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597258.311438995] [offboard_node]: ARM command sent
+[INFO] [1776597258.410263257] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597258.411530197] [offboard_node]: ARM command sent
+[INFO] [1776597258.510050340] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597258.510948203] [offboard_node]: ARM command sent
+[INFO] [1776597258.609173122] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597258.610071720] [offboard_node]: ARM command sent
+[INFO] [1776597258.710153323] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597258.711107055] [offboard_node]: ARM command sent
+[INFO] [1776597258.810363209] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597258.812048025] [offboard_node]: ARM command sent
+[INFO] [1776597258.910514602] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597258.911617642] [offboard_node]: ARM command sent
+[INFO] [1776597259.009559210] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597259.010522932] [offboard_node]: ARM command sent
+[INFO] [1776597259.109343720] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597259.110274868] [offboard_node]: ARM command sent
+[INFO] [1776597259.209509311] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597259.210496969] [offboard_node]: ARM command sent
+[INFO] [1776597259.309733076] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597259.310732701] [offboard_node]: ARM command sent
+[INFO] [1776597259.409837003] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597259.410925747] [offboard_node]: ARM command sent
+[INFO] [1776597259.509490957] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597259.522403147] [offboard_node]: ARM command sent
+[INFO] [1776597259.609370058] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597259.610324980] [offboard_node]: ARM command sent
+[INFO] [1776597259.710682406] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597259.711844588] [offboard_node]: ARM command sent
+[INFO] [1776597259.809539322] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597259.810532291] [offboard_node]: ARM command sent
+[INFO] [1776597259.909302137] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597259.910258820] [offboard_node]: ARM command sent
+[INFO] [1776597260.009421711] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597260.010375231] [offboard_node]: ARM command sent
+[INFO] [1776597260.109670535] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597260.110853011] [offboard_node]: ARM command sent
+[INFO] [1776597260.210287001] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597260.211248073] [offboard_node]: ARM command sent
+[INFO] [1776597260.309948731] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597260.311099656] [offboard_node]: ARM command sent
+[INFO] [1776597260.409761467] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597260.410678060] [offboard_node]: ARM command sent
+[INFO] [1776597260.509178433] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597260.510156433] [offboard_node]: ARM command sent
+[INFO] [1776597260.609852819] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597260.611161501] [offboard_node]: ARM command sent
+[INFO] [1776597260.709703026] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597260.711103610] [offboard_node]: ARM command sent
+[INFO] [1776597260.809228150] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597260.810159367] [offboard_node]: ARM command sent
+[INFO] [1776597260.909697899] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597260.910739578] [offboard_node]: ARM command sent
+[INFO] [1776597261.009322539] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597261.010460862] [offboard_node]: ARM command sent
+[INFO] [1776597261.109488886] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597261.110525098] [offboard_node]: ARM command sent
+[INFO] [1776597261.209388452] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597261.210388985] [offboard_node]: ARM command sent
+[INFO] [1776597261.309340145] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597261.310868641] [offboard_node]: ARM command sent
+[INFO] [1776597261.409246336] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597261.410219125] [offboard_node]: ARM command sent
+[INFO] [1776597261.509372395] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597261.510358880] [offboard_node]: ARM command sent
+[INFO] [1776597261.609026172] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597261.610043985] [offboard_node]: ARM command sent
+[INFO] [1776597261.709326182] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597261.710311323] [offboard_node]: ARM command sent
+[INFO] [1776597261.809297939] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597261.810259433] [offboard_node]: ARM command sent
+[INFO] [1776597261.909223777] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597261.910310485] [offboard_node]: ARM command sent
+[INFO] [1776597262.009381737] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597262.010378755] [offboard_node]: ARM command sent
+[INFO] [1776597262.109212726] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597262.110103057] [offboard_node]: ARM command sent
+[INFO] [1776597262.209336961] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597262.210304764] [offboard_node]: ARM command sent
+[INFO] [1776597262.309258701] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597262.310180680] [offboard_node]: ARM command sent
+[INFO] [1776597262.409519896] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597262.410839121] [offboard_node]: ARM command sent
+[INFO] [1776597262.509253606] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597262.510162688] [offboard_node]: ARM command sent
+[INFO] [1776597262.609520848] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597262.610467659] [offboard_node]: ARM command sent
+[INFO] [1776597262.710187352] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597262.711499185] [offboard_node]: ARM command sent
+[INFO] [1776597262.809288777] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597262.810217220] [offboard_node]: ARM command sent
+[INFO] [1776597262.909478900] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597262.910583726] [offboard_node]: ARM command sent
+[INFO] [1776597263.009269692] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597263.010220988] [offboard_node]: ARM command sent
+[INFO] [1776597263.108787543] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597263.111290614] [offboard_node]: ARM command sent
+[INFO] [1776597263.209410576] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597263.210390032] [offboard_node]: ARM command sent
+[INFO] [1776597263.309268619] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597263.310208106] [offboard_node]: ARM command sent
+[INFO] [1776597263.409356933] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597263.410409156] [offboard_node]: ARM command sent
+[INFO] [1776597263.509336895] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597263.510236862] [offboard_node]: ARM command sent
+[INFO] [1776597263.609129177] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597263.610068600] [offboard_node]: ARM command sent
+[INFO] [1776597263.709413555] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597263.710408626] [offboard_node]: ARM command sent
+[INFO] [1776597263.809279949] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597263.810237900] [offboard_node]: ARM command sent
+[INFO] [1776597263.909043367] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597263.910136071] [offboard_node]: ARM command sent
+[INFO] [1776597264.009499068] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597264.010502977] [offboard_node]: ARM command sent
+[INFO] [1776597264.109970774] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597264.111271292] [offboard_node]: ARM command sent
+[INFO] [1776597264.209444235] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597264.210512784] [offboard_node]: ARM command sent
+[INFO] [1776597264.310240774] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597264.311439052] [offboard_node]: ARM command sent
+[INFO] [1776597264.409198873] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597264.410114845] [offboard_node]: ARM command sent
+[INFO] [1776597264.509400146] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597264.521511467] [offboard_node]: ARM command sent
+[INFO] [1776597264.609249193] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597264.610196909] [offboard_node]: ARM command sent
+[INFO] [1776597264.709254240] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597264.710136964] [offboard_node]: ARM command sent
+[INFO] [1776597264.809393144] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597264.811445698] [offboard_node]: ARM command sent
+[INFO] [1776597264.909908242] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597264.910870999] [offboard_node]: ARM command sent
+[INFO] [1776597265.009900710] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597265.010908272] [offboard_node]: ARM command sent
+[INFO] [1776597265.110131246] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597265.111376058] [offboard_node]: ARM command sent
+[INFO] [1776597265.209913009] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597265.210996123] [offboard_node]: ARM command sent
+[INFO] [1776597265.309932182] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597265.310898720] [offboard_node]: ARM command sent
+[INFO] [1776597265.410159486] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597265.411933871] [offboard_node]: ARM command sent
+[INFO] [1776597265.509736927] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597265.511426351] [offboard_node]: ARM command sent
+[INFO] [1776597265.609606851] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597265.611071857] [offboard_node]: ARM command sent
+[INFO] [1776597265.709617256] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597265.710833172] [offboard_node]: ARM command sent
+[INFO] [1776597265.809812048] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597265.811084092] [offboard_node]: ARM command sent
+[INFO] [1776597265.909250351] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597265.910191384] [offboard_node]: ARM command sent
+[INFO] [1776597266.009710067] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597266.010959493] [offboard_node]: ARM command sent
+[INFO] [1776597266.109857113] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597266.111024330] [offboard_node]: ARM command sent
+[INFO] [1776597266.209658489] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597266.211081326] [offboard_node]: ARM command sent
+[INFO] [1776597266.309251991] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597266.310227749] [offboard_node]: ARM command sent
+[INFO] [1776597266.409249210] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597266.410253769] [offboard_node]: ARM command sent
+[INFO] [1776597266.509276222] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597266.510206636] [offboard_node]: ARM command sent
+[INFO] [1776597266.609214209] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597266.610229199] [offboard_node]: ARM command sent
+[INFO] [1776597266.709225860] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597266.710164978] [offboard_node]: ARM command sent
+[INFO] [1776597266.809395914] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597266.810366648] [offboard_node]: ARM command sent
+[INFO] [1776597266.909289516] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597266.910239290] [offboard_node]: ARM command sent
+[INFO] [1776597267.009695311] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597267.011199084] [offboard_node]: ARM command sent
+[INFO] [1776597267.109828836] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597267.111282240] [offboard_node]: ARM command sent
+[INFO] [1776597267.209438640] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597267.210376898] [offboard_node]: ARM command sent
+[INFO] [1776597267.310013901] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597267.311314246] [offboard_node]: ARM command sent
+[INFO] [1776597267.409847773] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597267.411092853] [offboard_node]: ARM command sent
+[INFO] [1776597267.509345350] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597267.510286264] [offboard_node]: ARM command sent
+[INFO] [1776597267.609309848] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597267.610235594] [offboard_node]: ARM command sent
+[INFO] [1776597267.709233545] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597267.710359359] [offboard_node]: ARM command sent
+[INFO] [1776597267.809409984] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597267.810467444] [offboard_node]: ARM command sent
+[INFO] [1776597267.909244463] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597267.910159137] [offboard_node]: ARM command sent
+[INFO] [1776597268.009211768] [offboard_node]: OFFBOARD mode command sent → check QGC
+[INFO] [1776597268.010146990] [offboard_node]: ARM command sent
+[INFO] [1776597268.010814110] [offboard_node]: Detection lost. TRACKING → HOLD
+Traceback (most recent call last):
+  File "/home/moon/jeongin/Pixhawk_ReID/ros2_nodes/offboard_node.py", line 197, in <module>
+    main()
+  File "/home/moon/jeongin/Pixhawk_ReID/ros2_nodes/offboard_node.py", line 191, in main
+    rclpy.spin(node)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 229, in spin
+    executor.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 808, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 797, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 681, in _wait_for_ready_callbacks
+    raise ExternalShutdownException()
+rclpy.executors.ExternalShutdownException

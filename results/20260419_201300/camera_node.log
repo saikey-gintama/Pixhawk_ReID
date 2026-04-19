@@ -1,0 +1,48 @@
+GST_ARGUS: Creating output stream
+CONSUMER: Waiting until producer is connected...
+GST_ARGUS: Available Sensor modes :
+GST_ARGUS: 2432 x 2048 FR = 35.000001 fps Duration = 28571428 ; Analog Gain range min 1.011580, max 15.848933; Exposure Range min 450000, max 400000000;
+
+GST_ARGUS: 2432 x 2048 FR = 42.000000 fps Duration = 23809524 ; Analog Gain range min 1.011580, max 15.848933; Exposure Range min 450000, max 400000000;
+
+GST_ARGUS: 1920 x 1080 FR = 64.000000 fps Duration = 15625000 ; Analog Gain range min 1.011580, max 15.848933; Exposure Range min 450000, max 400000000;
+
+GST_ARGUS: 1920 x 1080 FR = 75.999998 fps Duration = 13157895 ; Analog Gain range min 1.011580, max 15.848933; Exposure Range min 450000, max 400000000;
+
+GST_ARGUS: 1280 x 720 FR = 92.000002 fps Duration = 10869565 ; Analog Gain range min 1.011580, max 15.848933; Exposure Range min 450000, max 400000000;
+
+GST_ARGUS: 1280 x 720 FR = 108.999999 fps Duration = 9174312 ; Analog Gain range min 1.011580, max 15.848933; Exposure Range min 450000, max 400000000;
+
+GST_ARGUS: 640 x 480 FR = 129.000000 fps Duration = 7751938 ; Analog Gain range min 1.011580, max 15.848933; Exposure Range min 450000, max 400000000;
+
+GST_ARGUS: 640 x 480 FR = 153.000017 fps Duration = 6535947 ; Analog Gain range min 1.011580, max 15.848933; Exposure Range min 450000, max 400000000;
+
+GST_ARGUS: Running with following settings:
+   Camera index = 0 
+   Camera mode  = 3 
+   Output Stream W = 1920 H = 1080 
+   seconds to Run    = 0 
+   Frame Rate = 75.999998 
+GST_ARGUS: Setup Complete, Starting captures for 0 seconds
+GST_ARGUS: Starting repeat capture requests.
+CONSUMER: Producer has connected; continuing.
+[ WARN:0] global ./modules/videoio/src/cap_gstreamer.cpp (1100) open OpenCV | GStreamer warning: Cannot query video position: status=0, value=-1, duration=-1
+Traceback (most recent call last):
+  File "/home/moon/jeongin/Pixhawk_ReID/ros2_nodes/camera_node.py", line 50, in <module>
+    main()
+  File "/home/moon/jeongin/Pixhawk_ReID/ros2_nodes/camera_node.py", line 45, in main
+    rclpy.spin(node)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 229, in spin
+    executor.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 808, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 797, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 681, in _wait_for_ready_callbacks
+    raise ExternalShutdownException()
+rclpy.executors.ExternalShutdownException
+GST_ARGUS: Cleaning up
+CONSUMER: Done Success
+GST_ARGUS: Done Success
