@@ -99,6 +99,7 @@ BACKGROUND_WINDOW_DAYS = 5      # 직전 5일 preceding window
 # KSEM 데이터
 CADENCE_MIN = 1                 # 원본 1분 cadence (로더 단계)
 RESAMPLE_MIN = 15               # 논문 cadence: 15분 리샘플링 후 FSM 투입
+MIN_HISTORY_PTS = int(BACKGROUND_WINDOW_DAYS * 24 * 60 / RESAMPLE_MIN)  # 480포인트, 5일치 history가 있어야 계산 시작 
 
 # Proton bin 정의 (KSEM: O / OU / OUT event logic)
 # O   event logic: bin index 1~23  (50~6000 keV)
@@ -305,13 +306,10 @@ def fit_background(history: Optional[pd.Series],
     if history is not None and len(history) > 0:
         y    = history.values.astype(float)
         mask = np.isfinite(y) & (y > 0)
-        if mask.sum() >= 30:
+        if mask.sum() >= MIN_HISTORY_PTS:
             bg_val = float(np.mean(y[mask]))
             method = "constant_mean_5day"
         else:
-            bg_val = float(np.nanmean(y)) if np.any(np.isfinite(y)) else None
-            method = "constant_mean_fallback"
-        if bg_val is None:
             return None, "no_valid_history"
         bg_val = max(bg_val, 1.0)
         return (pd.Series(np.full(current_len, bg_val), index=current_index),
@@ -511,10 +509,9 @@ def run_fsm_with_daily_bg(full: pd.Series,
             if len(hist) > 0:
                 y     = hist.values.astype(float)
                 valid = np.isfinite(y) & (y > 0)
-                if valid.sum() >= 30:
+                if valid.sum() >= MIN_HISTORY_PTS:
+                    # 5일치 history가 있어야 통과
                     day_bg = max(float(np.mean(y[valid])), 1.0)
-                elif np.any(np.isfinite(y)):
-                    day_bg = max(float(np.nanmean(y)), 1.0)
                 else:
                     # window 내 데이터가 있으나 유효값 없음 → skip
                     day_bg = None
