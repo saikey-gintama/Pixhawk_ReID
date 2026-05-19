@@ -1,0 +1,7 @@
+# ksem_project Windows venv (Experiment A/B/C)
+# Python 3.10+
+# pip install -r requirements_win.txt
+ 
+numpy>=1.26,<3.0
+pandas>=2.0,<3.0
+matplotlib>=3.8,<4.0
