@@ -92,7 +92,7 @@ from matplotlib.gridspec import GridSpec
 # ============================================================
 
 # 논문 Section 3
-TRIGGER_PCT            = 0.25   # threshold = background x 1.25
+TRIGGER_PCT            = 20.00   # threshold = background x 1.25
 CONSECUTIVE_FOR_ALERT  = 2      # 연속 N회 초과 → ALERT (논문 case 2, 15분 x 2=30분)
 BACKGROUND_WINDOW_DAYS = 5      # 직전 5일 preceding window
 
