@@ -17,7 +17,7 @@ Background 추정 (논문 Section 3 / Fig. 3):
   - history(직전 5일) 데이터가 충분하지 않은 날은 FSM에서 제외(skip)
 
 트리거 조건 (논문 Fig.4 case 2):
-  - threshold = background × 1.25
+  - threshold = background x 1.25
   - 단일 측정 초과  → PRE_ALERT  (1차 경고, "begin preparing")
   - 연속 2회 초과   → ALERT      (확정, "seek shelter ASAP")
 
@@ -92,8 +92,8 @@ from matplotlib.gridspec import GridSpec
 # ============================================================
 
 # 논문 Section 3
-TRIGGER_PCT            = 0.25   # threshold = background × 1.25
-CONSECUTIVE_FOR_ALERT  = 2      # 연속 N회 초과 → ALERT (논문 case 2, 15분×2=30분)
+TRIGGER_PCT            = 0.25   # threshold = background x 1.25
+CONSECUTIVE_FOR_ALERT  = 2      # 연속 N회 초과 → ALERT (논문 case 2, 15분 x 2=30분)
 BACKGROUND_WINDOW_DAYS = 5      # 직전 5일 preceding window
 
 # KSEM 데이터
@@ -358,7 +358,7 @@ def fsm_step(ctx: FSMContext,
 
     논문 case 2:
       1회 초과 → PRE_ALERT ("begin preparing")
-      2회 연속 → ALERT     ("seek shelter ASAP")  ← 15분×2 = 30분
+      2회 연속 → ALERT     ("seek shelter ASAP")  ← 15분 x 2 = 30분
       threshold 아래 → NOMINAL ("safe to leave shelter")
 
     ALERT 중 background freeze:
@@ -704,7 +704,7 @@ def plot_results(pd_results:   Dict[str, pd.DataFrame],
     fig.suptitle(
         "KSEM PD  —  BL-C2  (Löwe et al. 2025 Reactive Nowcasting)\n"
         f"Background: {bg_method}  |  "
-        f"Threshold: ×{1 + TRIGGER_PCT:.2f}  |  "
+        f"Threshold: x{1 + TRIGGER_PCT:.2f}  |  "
         f"Cadence: {RESAMPLE_MIN} min  |  "
         f"Consecutive for ALERT: {CONSECUTIVE_FOR_ALERT} pts ({CONSECUTIVE_FOR_ALERT * RESAMPLE_MIN} min)",
         fontsize=11, y=0.98)
@@ -726,7 +726,7 @@ def plot_results(pd_results:   Dict[str, pd.DataFrame],
                  label="Background (PD1)")
         ax1.plot(d.index, d["threshold"],
                  color="red",  linestyle="--", linewidth=1.3,
-                 label=f"Threshold ×{1+TRIGGER_PCT:.2f} (PD1)")
+                 label=f"Threshold x{1+TRIGGER_PCT:.2f} (PD1)")
 
     ax1.set_yscale("log")
     ax1.set_ylabel("Proton count rate\n(A+B sum, O+OU+OUT logic)", fontsize=9)
@@ -788,7 +788,7 @@ def plot_results(pd_results:   Dict[str, pd.DataFrame],
 
     ax3.axhline(1 + TRIGGER_PCT, color="red", linestyle="--",
                 linewidth=1.2,
-                label=f"Threshold ({1+TRIGGER_PCT:.2f}×)")
+                label=f"Threshold ({1+TRIGGER_PCT:.2f}x)")
     ax3.axhline(1.0, color="gray", linewidth=0.8)
     ax3.set_ylabel("Value / Background", fontsize=9)
     ax3.set_xlabel("Time (UTC)", fontsize=9)
@@ -1004,7 +1004,7 @@ def _finalize(pd_results: Dict[str, pd.DataFrame],
         save[f"{k}_value"]      = df["value"].reindex(save.index).values
         save[f"{k}_background"] = df["background"].reindex(save.index).round(3).values
         save[f"{k}_threshold"]  = df["threshold"].reindex(save.index).round(3).values
-        save[f"{k}_state"]      = df["state"].reindex(save.index).map(lambda s: s.name).values
+        save[f"{k}_state"]      = df["state"].reindex(save.index).map(lambda s: s.name if isinstance(s, State) else None).values
     save.to_csv(out_csv)
     print(f"\n[Output] CSV: {out_csv}")
 
