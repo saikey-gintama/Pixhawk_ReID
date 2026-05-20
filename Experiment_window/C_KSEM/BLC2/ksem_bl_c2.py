@@ -58,7 +58,7 @@ Lead Time (논문 Figure 3 right):
       [Fix 4] run_range / run_single_date 배경 추정 통일
                (동일한 fit_background() 사용)
 
-  v1  2025-05  인계 문서 기반 추가 수정
+  v1  2026-05  인계 문서 기반 추가 수정
       [Fix A] A+B 합산: (s_A + s_B) / 2 → s_A + s_B
               (검출기 A, B는 반대 방향 독립 검출 → 합산이 올바름)
       [Fix B] 15분 리샘플링: 논문 cadence(15-min) 재현
@@ -73,7 +73,7 @@ Lead Time (논문 Figure 3 right):
               FSM 처리 자체를 건너뜀 (fallback bg로 처리하지 않음)
               run_single_date도 history=None이면 분석 skip
 
-  v3  2026-05  종료 조건 강화 및 freeze 일원화
+  v2  2026-05  종료 조건 강화 및 freeze 일원화
       [Fix 1] ALERT 종료 조건: B + C AND 조건으로 교체
               (B) value < PRE_ALERT 진입값 × EXIT_TRIGGER_RATIO (기본 1.5)
               (C) threshold 미만 연속 EXIT_CONSECUTIVE_PTS 포인트 (기본 4 = 1시간)
@@ -112,14 +112,22 @@ from matplotlib.gridspec import GridSpec
 # ============================================================
 
 # 논문 Section 3
-TRIGGER_PCT            = 0.25   # threshold = background x 1.25
-CONSECUTIVE_FOR_ALERT  = 2      # 연속 N회 초과 → ALERT (논문 case 2, 15분 x 2=30분)
-BACKGROUND_WINDOW_DAYS = 5      # 직전 5일 preceding window
+TRIGGER_PCT            = 0.25    # threshold = background × (1 + TRIGGER_PCT)
+CONSECUTIVE_FOR_ALERT  = 2       # 연속 N회 초과 → ALERT (논문 case 2, 15분 x 2=30분)
+
+# Background 추정 (옵션 C: quiet-day 선택)
+# [Fix 5] 직전 SEARCH_WINDOW_DAYS 안에서 일별 중앙값이 낮은 QUIET_DAYS일을 골라
+#         그 포인트들의 평균으로 background를 추정.
+#         → 이벤트 피크가 window에 들어와도 자동 배제, 센서 노화도 반영.
+SEARCH_WINDOW_DAYS = 14   # bg 탐색 범위 (일)
+QUIET_DAYS         = 5    # 탐색 범위 내에서 선택할 quiet한 날 수
+# quiet day 선택 최소 조건: QUIET_DAYS일 이상 데이터가 있어야 bg 계산 시작
+MIN_QUIET_DAYS_REQUIRED = QUIET_DAYS
 
 # KSEM 데이터
 CADENCE_MIN = 1                 # 원본 1분 cadence (로더 단계)
 RESAMPLE_MIN = 15               # 논문 cadence: 15분 리샘플링 후 FSM 투입
-MIN_HISTORY_PTS = int(BACKGROUND_WINDOW_DAYS * 24 * 60 / RESAMPLE_MIN)  # 480포인트, 5일치 history가 있어야 계산 시작 
+MIN_HISTORY_PTS = int(QUIET_DAYS * 24 * 60 / RESAMPLE_MIN)  # quiet 5일치 포인트 수
 
 # Proton bin 정의 (KSEM: O / OU / OUT event logic)
 # O   event logic: bin index 1~23  (50~6000 keV)
@@ -286,9 +294,9 @@ def load_single_date(root: Path,
     current = pd.concat(parts_cur).sort_index()
     current = current[~current.index.duplicated(keep="first")]
 
-    # history: 직전 5일치
+    # history: 탐색 window치 (quiet-day 선택용)
     hist_end      = target_date - pd.Timedelta(minutes=1)
-    hist_start    = target_date - pd.Timedelta(days=BACKGROUND_WINDOW_DAYS)
+    hist_start    = target_date - pd.Timedelta(days=SEARCH_WINDOW_DAYS)
     hist_ym_start = hist_start.strftime("%Y%m")
 
     try:
@@ -314,35 +322,65 @@ def load_single_date(root: Path,
 #          이 함수는 주어진 history로부터 단순 상수 background를 반환.
 # ============================================================
 
+def select_quiet_days_bg(history: pd.Series) -> Optional[float]:
+    """
+    [Fix 5] 옵션 C: quiet-day 선택 background 추정.
+
+    1. history를 날짜별로 groupby → 각 날의 중앙값(median) 계산
+    2. 중앙값이 낮은 순으로 QUIET_DAYS일 선택
+    3. 선택된 날들의 전체 포인트 평균 → background
+
+    이벤트 피크가 포함된 날은 중앙값이 높아 자동 제외됨.
+    센서 노화는 SEARCH_WINDOW_DAYS 내에서 자연스럽게 반영됨.
+
+    Returns
+    -------
+    float 또는 None (quiet day가 MIN_QUIET_DAYS_REQUIRED일 미만이면 None)
+    """
+    if history is None or len(history) == 0:
+        return None
+
+    s = history.copy()
+    s = s[np.isfinite(s) & (s > 0)]
+    if len(s) == 0:
+        return None
+
+    # 날짜별 중앙값
+    day_median = s.groupby(s.index.date).median()
+    if len(day_median) < MIN_QUIET_DAYS_REQUIRED:
+        return None
+
+    # 중앙값 낮은 순 QUIET_DAYS일 선택
+    quiet_dates = set(day_median.nsmallest(QUIET_DAYS).index)
+    quiet_pts   = s[pd.Series(s.index.date, index=s.index).isin(quiet_dates).values]
+
+    if len(quiet_pts) == 0:
+        return None
+
+    return float(quiet_pts.mean())
+
+
 def fit_background(history: Optional[pd.Series],
                    current_len: int,
                    current_index: pd.DatetimeIndex
                    ) -> Tuple[Optional[pd.Series], str]:
     """
-    논문 방법 (constant linear fit = 수평 상수):
-      background = mean(직전 5일 데이터)  ← 상수, 기울기 없음
+    [Fix 5] quiet-day 선택 background 추정 (단일 날짜 모드용).
 
     [Fix E] history가 None이면 None을 반환 → 호출부에서 skip 처리.
 
     Returns
     -------
-    bg      : pd.Series 또는 None (history 없으면 None)
+    bg      : pd.Series 또는 None (quiet day 부족이면 None)
     method  : str
     """
-    if history is not None and len(history) > 0:
-        y    = history.values.astype(float)
-        mask = np.isfinite(y) & (y > 0)
-        if mask.sum() >= MIN_HISTORY_PTS:
-            bg_val = float(np.mean(y[mask]))
-            method = "constant_mean_5day"
-        else:
-            return None, "no_valid_history"
-        # [Fix 3] clamp(max 1.0) 제거: bg는 데이터 실제 평균값 그대로 사용
-        return (pd.Series(np.full(current_len, bg_val), index=current_index),
-                method)
+    bg_val = select_quiet_days_bg(history)
+    if bg_val is None:
+        return None, "no_valid_history"
 
-    # [Fix E] history 없음 → skip 신호
-    return None, "no_history_skip"
+    method = f"quiet{QUIET_DAYS}day_of{SEARCH_WINDOW_DAYS}day_window"
+    return (pd.Series(np.full(current_len, bg_val), index=current_index),
+            method)
 
 
 # ============================================================
@@ -536,21 +574,15 @@ def run_fsm_with_daily_bg(full: pd.Series,
         # [Fix 2] ALERT 중에는 freeze: day_bg를 이전 값 그대로 유지
         if ctx.state != State.ALERT:
             win_end   = pd.Timestamp(d)
-            win_start = win_end - pd.Timedelta(days=BACKGROUND_WINDOW_DAYS)
+            win_start = win_end - pd.Timedelta(days=SEARCH_WINDOW_DAYS)
             hist      = ref[(ref.index >= win_start) & (ref.index < win_end)]
 
-            if len(hist) > 0:
-                y     = hist.values.astype(float)
-                valid = np.isfinite(y) & (y > 0)
-                if valid.sum() >= MIN_HISTORY_PTS:
-                    # [Fix 3] clamp(max 1.0) 제거: bg는 데이터 실제 평균값 사용
-                    day_bg = float(np.mean(y[valid]))
-                else:
-                    # window 내 데이터가 있으나 유효값 없음 → skip
-                    day_bg = None
-            else:
-                # [Fix E] window 내 데이터 없음 → bg 계산 불가 → skip
-                day_bg = None
+            # [Fix 5] quiet-day 선택: 이벤트 구간은 중앙값이 높아 자동 배제됨
+            # (별도 event_idx 제거 불필요 — quiet day 선택이 자연스럽게 처리)
+            new_bg = select_quiet_days_bg(hist)
+            day_bg = new_bg if new_bg is not None else day_bg  # 계산 불가 시 이전 값 유지
+            if day_bg is None:
+                pass  # [Fix E]: 아래에서 skip 처리
 
         # [Fix E] 유효한 bg가 없으면 이 날 전체를 skip (행 추가 안 함)
         if day_bg is None:
@@ -754,18 +786,16 @@ def plot_results(pd_results:   Dict[str, pd.DataFrame],
                  color=pd_colors[key], linewidth=1.5,
                  label=f"{key} 5-pt avg")
 
-    if "PD1" in pd_results:
-        d = pd_results["PD1"]
-        ax1.plot(d.index, d["background"],
-                 color="gray", linestyle="--", linewidth=1.3,
-                 label="Background (PD1)")
-        ax1.plot(d.index, d["threshold"],
-                 color="red",  linestyle="--", linewidth=1.3,
-                 label=f"Threshold x{1+TRIGGER_PCT:.2f} (PD1)")
+    bg_linestyles  = {"PD1": "--", "PD2": "-.", "PD3": ":"}
+    for key, df in pd_results.items():
+        ax1.plot(df.index, df["background"],
+                 color=pd_colors[key], linestyle=bg_linestyles[key],
+                 linewidth=1.2, alpha=0.8,
+                 label=f"BG ({key})")
 
     ax1.set_yscale("log")
     ax1.set_ylabel("Proton count rate\n(A+B sum, O+OU+OUT logic)", fontsize=9)
-    ax1.legend(fontsize=7, ncol=4, loc="upper left")
+    ax1.legend(fontsize=7, ncol=3, loc="upper left")
     ax1.grid(True, alpha=0.3)
 
     # ── Panel 2: FSM 상태 ──
@@ -957,7 +987,7 @@ def run_range(root: Path, start_ym: str, end_ym: str,
 
     # 분석 시작일 계산 (pre_history 로드 범위용)
     start_date     = pd.Timestamp(f"{start_ym[:4]}-{start_ym[4:]}-01")
-    pre_hist_start = start_date - pd.Timedelta(days=BACKGROUND_WINDOW_DAYS)
+    pre_hist_start = start_date - pd.Timedelta(days=SEARCH_WINDOW_DAYS)
     pre_hist_ym    = pre_hist_start.strftime("%Y%m")
 
     for key in ["PD1", "PD2", "PD3"]:
@@ -980,7 +1010,7 @@ def run_range(root: Path, start_ym: str, end_ym: str,
                     mask = pre_full_1min.index < full_1min.index[0]
                     if mask.sum() > 0:
                         pre_raw = pre_full_1min[mask].iloc[
-                            -BACKGROUND_WINDOW_DAYS * 24 * 60:]
+                            -SEARCH_WINDOW_DAYS * 24 * 60:]
                         pre_history = _resample_15min(pre_raw)
                         print(f"  {key}: pre_history={len(pre_history)}포인트 (15분)")
                 except FileNotFoundError:
@@ -991,7 +1021,7 @@ def run_range(root: Path, start_ym: str, end_ym: str,
             result = run_fsm_with_daily_bg(full, pre_history)
 
             pd_results[key] = result
-            bg_methods.append("constant_mean_5day_daily_update_15min")
+            bg_methods.append(f"quiet{QUIET_DAYS}day_of{SEARCH_WINDOW_DAYS}day_window_daily_update_15min")
             print(f"  {key}: ALERT+PRE={(result['state_val']>0).sum()}포인트"
                   f"({(result['state_val']>0).sum() * RESAMPLE_MIN}분)")
         except FileNotFoundError as e:
