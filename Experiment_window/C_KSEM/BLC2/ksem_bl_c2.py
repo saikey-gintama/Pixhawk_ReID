@@ -21,8 +21,10 @@ Background 추정 (논문 Section 3 / Fig. 3):
   - 단일 측정 초과  → PRE_ALERT  (1차 경고, "begin preparing")
   - 연속 2회 초과   → ALERT      (확정, "seek shelter ASAP")
 
-이벤트 종료:
-  - value < threshold → NOMINAL 복귀, fitting 재개
+이벤트 종료 (v3 수정):
+  - 아래 두 조건을 동시에 만족할 때 NOMINAL 복귀, fitting 재개
+    (B) value < PRE_ALERT 진입 시점 value × EXIT_TRIGGER_RATIO
+    (C) threshold 미만 상태가 EXIT_CONSECUTIVE_PTS 포인트 연속
 
 FAR (논문 Eq. 1):
   FAR = false_trigger / (false_trigger + correct_trigger)
@@ -49,14 +51,14 @@ Lead Time (논문 Figure 3 right):
   python ksem_bl_c2.py --root "D:\\Raw Count" --start 201905 --end 202412
 
 수정 이력:
-  v2  2025-05  논문 compliance 4개 항목 수정
+  v1  2026-05  논문 compliance 4개 항목 수정
       [Fix 1] constant linear fit → np.mean() 상수 (slope 제거)
       [Fix 2] 배경 갱신 주기 → 하루 1회 (매분 갱신 제거)
       [Fix 3] run_range 배경 동결 — FSM과 연동하여 이벤트 중 freeze
       [Fix 4] run_range / run_single_date 배경 추정 통일
                (동일한 fit_background() 사용)
 
-  v3  2025-05  인계 문서 기반 추가 수정
+  v1  2025-05  인계 문서 기반 추가 수정
       [Fix A] A+B 합산: (s_A + s_B) / 2 → s_A + s_B
               (검출기 A, B는 반대 방향 독립 검출 → 합산이 올바름)
       [Fix B] 15분 리샘플링: 논문 cadence(15-min) 재현
@@ -66,10 +68,28 @@ Lead Time (논문 Figure 3 right):
               (3축 PD는 입자 방향에 따라 1개 PD에만 강하게 잡힐 수 있음;
                FAR 억제는 "연속 2포인트(=30분)" 조건이 담당)
       [Fix D] 플롯 Panel 2 레전드: Patch → Line2D (수직선과 일치)
-      [Fix E] history 없는 첫 5일치 skip:
+  v1.1[Fix E] history 없는 첫 5일치 skip:
               run_fsm_with_daily_bg에서 직전 5일 window가 비어있는 날은
               FSM 처리 자체를 건너뜀 (fallback bg로 처리하지 않음)
               run_single_date도 history=None이면 분석 skip
+
+  v3  2026-05  종료 조건 강화 및 freeze 일원화
+      [Fix 1] ALERT 종료 조건: B + C AND 조건으로 교체
+              (B) value < PRE_ALERT 진입값 × EXIT_TRIGGER_RATIO (기본 1.5)
+              (C) threshold 미만 연속 EXIT_CONSECUTIVE_PTS 포인트 (기본 4 = 1시간)
+              → FSMContext에 event_trigger_value, consec_below 필드 추가
+      [Fix 2] background freeze 로직 일원화
+              기존: run_fsm_with_daily_bg(날짜 루프) + fsm_step(내부) 이중 관리
+                    → ALERT 진입 당일 자정 직후 bg 갱신과 bg_frozen 불일치로
+                      ALERT 중 background가 4회 변동하는 버그
+              수정: freeze를 run_fsm_with_daily_bg 날짜 루프에서만 담당
+                    fsm_step은 외부에서 결정된 bg/threshold를 그대로 수신
+                    (bg_frozen 필드 및 내부 freeze 분기 제거)
+      [Fix 3] background clamp(max 1.0) 제거
+              KSEM proton count rate는 물리적으로 1.0 미만이 될 수 있음
+              fit_background()의 y > 0 필터로 bg > 0은 이미 보장되므로
+              clamp는 근거 없는 하한 고정으로 낮은 구간 경보를 과다 발생시킴
+              fit_background() 및 run_fsm_with_daily_bg 두 곳 모두 제거
 """
 
 import argparse
@@ -92,7 +112,7 @@ from matplotlib.gridspec import GridSpec
 # ============================================================
 
 # 논문 Section 3
-TRIGGER_PCT            = 10.00   # threshold = background x 1.25
+TRIGGER_PCT            = 0.25   # threshold = background x 1.25
 CONSECUTIVE_FOR_ALERT  = 2      # 연속 N회 초과 → ALERT (논문 case 2, 15분 x 2=30분)
 BACKGROUND_WINDOW_DAYS = 5      # 직전 5일 preceding window
 
@@ -117,6 +137,12 @@ EXCLUDE_BINS = {0, 24, 45, 57, 81, 105, 117, 127}  # underflow / trash
 #          FAR 억제는 "연속 2포인트(=30분)" 조건이 담당
 MIN_PD_VOTE_PRE   = 1   # PRE_ALERT: PD 1개 이상
 MIN_PD_VOTE_ALERT = 1   # ALERT:     PD 1개 이상 (v2: 2 → v3: 1)
+
+# ALERT 종료 조건 (B + C AND)  [Fix 1]
+# (B) value < PRE_ALERT 진입 시점 value × EXIT_TRIGGER_RATIO 이어야 종료 가능
+EXIT_TRIGGER_RATIO   = 1.5
+# (C) threshold 미만이 EXIT_CONSECUTIVE_PTS 포인트 연속이어야 종료
+EXIT_CONSECUTIVE_PTS = 4    # 4 × 15분 = 1시간
 
 # 출력
 PLOT_DPI = 150
@@ -311,7 +337,7 @@ def fit_background(history: Optional[pd.Series],
             method = "constant_mean_5day"
         else:
             return None, "no_valid_history"
-        bg_val = max(bg_val, 1.0)
+        # [Fix 3] clamp(max 1.0) 제거: bg는 데이터 실제 평균값 그대로 사용
         return (pd.Series(np.full(current_len, bg_val), index=current_index),
                 method)
 
@@ -326,25 +352,29 @@ def fit_background(history: Optional[pd.Series],
 class FSMContext:
     """FSM 내부 상태."""
     def __init__(self):
-        self.state         = State.NOMINAL
-        self.consec_above  = 0        # 연속 threshold 초과 횟수
-        self.in_event      = False    # 이벤트 진행 중 여부
-        self.event_start   = None     # 이벤트 시작 타임스탬프
-        self.bg_frozen     = None     # ALERT 중 freeze된 background 값
-        self.event_cumsum  = 0.0      # 누적 SEP dose (bg 제거)
-        self.event_peak    = 0.0      # 이벤트 내 최대값
+        self.state               = State.NOMINAL
+        self.consec_above        = 0     # 연속 threshold 초과 횟수
+        self.consec_below        = 0     # 연속 threshold 미만 횟수 (종료 조건 C)
+        self.in_event            = False # 이벤트 진행 중 여부
+        self.event_start         = None  # 이벤트 시작 타임스탬프
+        self.event_trigger_value = None  # PRE_ALERT 진입 시점 value (종료 조건 B)
+        self.event_cumsum        = 0.0   # 누적 SEP dose (bg 제거)
+        self.event_peak          = 0.0   # 이벤트 내 최대값
 
-    def start_event(self, t: pd.Timestamp):
-        self.in_event     = True
-        self.event_start  = t
-        self.event_cumsum = 0.0
-        self.event_peak   = 0.0
+    def start_event(self, t: pd.Timestamp, trigger_value: float):
+        self.in_event            = True
+        self.event_start         = t
+        self.event_trigger_value = trigger_value
+        self.event_cumsum        = 0.0
+        self.event_peak          = 0.0
+        self.consec_below        = 0
 
     def end_event(self):
-        self.in_event     = False
-        self.event_start  = None
-        self.bg_frozen    = None
-        self.consec_above = 0
+        self.in_event            = False
+        self.event_start         = None
+        self.event_trigger_value = None
+        self.consec_above        = 0
+        self.consec_below        = 0
 
 
 def fsm_step(ctx: FSMContext,
@@ -356,27 +386,28 @@ def fsm_step(ctx: FSMContext,
     """
     15분 타임스텝 (리샘플링 후 투입).
 
-    논문 case 2:
+    진입 조건 (논문 case 2):
       1회 초과 → PRE_ALERT ("begin preparing")
       2회 연속 → ALERT     ("seek shelter ASAP")  ← 15분 x 2 = 30분
-      threshold 아래 → NOMINAL ("safe to leave shelter")
 
-    ALERT 중 background freeze:
-      논문: "Background fitting is paused during the SEP event
-             and resumes only after the SEP event has ended
-             to avoid overestimating the background."
+    종료 조건 (B + C AND) [Fix 1]:
+      (B) value < event_trigger_value × EXIT_TRIGGER_RATIO
+      (C) threshold 미만 연속 EXIT_CONSECUTIVE_PTS 포인트 (기본 4 = 1시간)
+      두 조건을 동시에 만족할 때만 NOMINAL 복귀.
+
+    background freeze [Fix 2]:
+      freeze 결정은 run_fsm_with_daily_bg 날짜 루프에서 담당.
+      이 함수는 외부에서 이미 결정된 bg / threshold를 그대로 사용함.
+      (내부에서 bg_frozen을 관리하던 이중 로직 제거)
     """
-    # ALERT 중에는 진입 시점의 bg를 그대로 사용 (freeze)
-    if ctx.state == State.ALERT and ctx.bg_frozen is not None:
-        bg        = ctx.bg_frozen
-        threshold = bg * (1 + TRIGGER_PCT)
-
     above = value > threshold
 
     if above:
         ctx.consec_above += 1
+        ctx.consec_below  = 0
     else:
-        ctx.consec_above = 0
+        ctx.consec_above  = 0
+        ctx.consec_below += 1
 
     prev        = ctx.state
     event_ended = False
@@ -385,19 +416,22 @@ def fsm_step(ctx: FSMContext,
     if ctx.state == State.NOMINAL:
         if above:
             ctx.state = State.PRE_ALERT
-            ctx.start_event(t)
+            ctx.start_event(t, value)
 
     elif ctx.state == State.PRE_ALERT:
         if ctx.consec_above >= CONSECUTIVE_FOR_ALERT:
-            ctx.state     = State.ALERT
-            ctx.bg_frozen = bg          # bg freeze 시작
+            ctx.state = State.ALERT
         elif not above:
             # 1회 초과 후 내려옴 → false trigger → NOMINAL
             ctx.state = State.NOMINAL
             ctx.end_event()
 
     elif ctx.state == State.ALERT:
-        if not above:
+        # [Fix 1] B + C AND 종료 조건
+        cond_b = (ctx.event_trigger_value is not None and
+                  value < ctx.event_trigger_value * EXIT_TRIGGER_RATIO)
+        cond_c = ctx.consec_below >= EXIT_CONSECUTIVE_PTS
+        if cond_b and cond_c:
             ctx.state = State.NOMINAL
             ctx.end_event()
             event_ended = True
@@ -407,21 +441,17 @@ def fsm_step(ctx: FSMContext,
         ctx.event_cumsum += max(value - bg, 0.0)
         ctx.event_peak    = max(ctx.event_peak, value)
 
-    effective_threshold = (ctx.bg_frozen * (1 + TRIGGER_PCT)
-                           if ctx.state == State.ALERT
-                              and ctx.bg_frozen is not None
-                           else threshold)
-
     return ctx.state, {
         "prev_state":     prev,
         "state":          ctx.state,
         "above":          above,
         "consec_above":   ctx.consec_above,
+        "consec_below":   ctx.consec_below,
         "in_event":       ctx.in_event,
         "event_cumsum":   ctx.event_cumsum,
         "event_ended":    event_ended,
         "bg_used":        bg,
-        "threshold_used": effective_threshold,
+        "threshold_used": threshold,
     }
 
 
@@ -443,6 +473,7 @@ def run_fsm(series: pd.Series,
             "threshold":    info["threshold_used"],
             "above":        info["above"],
             "consec_above": info["consec_above"],
+            "consec_below": info["consec_below"],
             "in_event":     info["in_event"],
             "event_cumsum": info["event_cumsum"],
             "state":        state,
@@ -469,11 +500,12 @@ def run_fsm_with_daily_bg(full: pd.Series,
 
     날짜 D의 처리 순서:
       1. D일 시작 시점에 bg 갱신 판단
-         - FSMContext가 ALERT 상태 → bg freeze (이전 값 유지)
+         - FSMContext가 ALERT 상태 → bg freeze (이전 값 유지) [Fix 2]
          - ALERT 아님 → mean(직전 5일) 으로 bg 갱신
            * 직전 5일은 full + pre_history 를 합쳐서 계산
          - [Fix E] 직전 5일 window가 비어있으면 해당 날 skip
       2. D일의 각 15분 포인트를 실제 FSMContext로 처리
+         fsm_step에는 이미 결정된 bg/threshold를 전달 (내부 freeze 없음) [Fix 2]
 
     Parameters
     ----------
@@ -501,6 +533,7 @@ def run_fsm_with_daily_bg(full: pd.Series,
 
     for d in dates:
         # ── 날짜 시작: bg 갱신 판단 ──
+        # [Fix 2] ALERT 중에는 freeze: day_bg를 이전 값 그대로 유지
         if ctx.state != State.ALERT:
             win_end   = pd.Timestamp(d)
             win_start = win_end - pd.Timedelta(days=BACKGROUND_WINDOW_DAYS)
@@ -510,8 +543,8 @@ def run_fsm_with_daily_bg(full: pd.Series,
                 y     = hist.values.astype(float)
                 valid = np.isfinite(y) & (y > 0)
                 if valid.sum() >= MIN_HISTORY_PTS:
-                    # 5일치 history가 있어야 통과
-                    day_bg = max(float(np.mean(y[valid])), 1.0)
+                    # [Fix 3] clamp(max 1.0) 제거: bg는 데이터 실제 평균값 사용
+                    day_bg = float(np.mean(y[valid]))
                 else:
                     # window 내 데이터가 있으나 유효값 없음 → skip
                     day_bg = None
@@ -530,6 +563,7 @@ def run_fsm_with_daily_bg(full: pd.Series,
         for t in day_idx:
             val     = float(full[t])
             thr     = day_bg * (1 + TRIGGER_PCT)
+            # [Fix 2] fsm_step에 외부 결정 bg/thr 전달, 내부 freeze 없음
             state, info = fsm_step(ctx, t, val, day_bg, thr)
             rows.append({
                 "Time":         t,
@@ -538,6 +572,7 @@ def run_fsm_with_daily_bg(full: pd.Series,
                 "threshold":    info["threshold_used"],
                 "above":        info["above"],
                 "consec_above": info["consec_above"],
+                "consec_below": info["consec_below"],
                 "in_event":     info["in_event"],
                 "event_cumsum": info["event_cumsum"],
                 "state":        state,
