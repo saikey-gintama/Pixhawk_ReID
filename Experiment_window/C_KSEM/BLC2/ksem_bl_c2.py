@@ -112,7 +112,7 @@ from matplotlib.gridspec import GridSpec
 # ============================================================
 
 # 논문 Section 3
-TRIGGER_PCT            = 0.25    # threshold = background × (1 + TRIGGER_PCT)
+TRIGGER_PCT            = 20.00   # threshold = background × (1 + TRIGGER_PCT)
 CONSECUTIVE_FOR_ALERT  = 2       # 연속 N회 초과 → ALERT (논문 case 2, 15분 x 2=30분)
 
 # Background 추정 (옵션 C: quiet-day 선택)
@@ -139,6 +139,12 @@ PROTON_BINS = (
     list(range(46, 57))     # OUT
 )
 EXCLUDE_BINS = {0, 24, 45, 57, 81, 105, 117, 127}  # underflow / trash
+
+# 노이즈 플로어 컷 (전처리)
+# [Fix 7] proton total (A+B 합산)이 이 값 이하이면 노이즈로 간주 → 0 처리.
+#          0은 이후 s > 0 필터에서 자동 제외되어 bg·FSM 계산에 영향 없음.
+#          max 65535 카운트 대비 10은 사실상 측정 노이즈 수준.
+NOISE_FLOOR = 10
 
 # 투표 임계
 # [Fix C] ALERT: 3축 중 1개라도 ALERT → 경보 (OR 조건)
@@ -231,7 +237,10 @@ def proton_total_from_csv(filepath: Path) -> pd.Series:
     s_A = df_A[bins_A].sum(axis=1)
     s_B = df_B[bins_B].sum(axis=1)
     # [Fix A] 합산 (÷2 제거)
-    return (s_A + s_B).rename("proton_total")
+    total = (s_A + s_B).rename("proton_total")
+    # [Fix 7] 노이즈 플로어 컷: NOISE_FLOOR 이하는 0으로 처리
+    total[total <= NOISE_FLOOR] = 0
+    return total
 
 
 def load_series_range(root: Path,
@@ -798,50 +807,24 @@ def plot_results(pd_results:   Dict[str, pd.DataFrame],
     ax1.legend(fontsize=7, ncol=3, loc="upper left")
     ax1.grid(True, alpha=0.3)
 
-    # ── Panel 2: FSM 상태 ──
+    # ── Panel 2: FSM 상태 (배경색만, 선 없음) ──
     ax2 = fig.add_subplot(gs[1], sharex=ax1)
     times = voted.index
     svals = voted["voted"].values
 
     for i in range(len(times) - 1):
         ax2.axvspan(times[i], times[i + 1],
-                    alpha=0.28,
+                    alpha=0.5,
                     color=STATE_COLOR[State(svals[i])])
-
-    offsets = {"PD1": 0.0, "PD2": 0.07, "PD3": -0.07}
-    for key, df in pd_results.items():
-        ax2.plot(df.index,
-                 df["state_val"].values + offsets.get(key, 0),
-                 color=pd_colors[key], linewidth=0.9,
-                 alpha=0.8, label=key)
-
-    ax2.step(voted.index, voted["voted"], color="black",
-             linewidth=2.0, linestyle="--", where="post",
-             label="Voted", zorder=5)
-
-    for tt in pre_times:
-        ax2.axvline(tt, color=STATE_COLOR[State.PRE_ALERT],
-                    linewidth=1.5, alpha=0.9, zorder=4)
-    for at in alert_times:
-        ax2.axvline(at, color=STATE_COLOR[State.ALERT],
-                    linewidth=1.5, alpha=0.9, linestyle=":", zorder=4)
 
     ax2.set_yticks([0, 1, 2])
     ax2.set_yticklabels(["NOMINAL", "PRE-ALERT", "ALERT"], fontsize=8)
     ax2.set_ylabel("FSM State", fontsize=9)
     ax2.grid(True, alpha=0.3, axis="x")
 
-    # [Fix D] 레전드: state는 Patch, onset 마커는 Line2D로 구분
-    legend_h = (
-        [mpatches.Patch(color=STATE_COLOR[s], alpha=0.5, label=s.name)
-         for s in State]
-        + [Line2D([0], [0], color=STATE_COLOR[State.PRE_ALERT],
-                  linewidth=1.5, label="PRE-ALERT onset"),
-           Line2D([0], [0], color=STATE_COLOR[State.ALERT],
-                  linewidth=1.5, linestyle=":", label="ALERT onset")]
-    )
-    ax2.legend(handles=legend_h, fontsize=7,
-               loc="upper right", ncol=5)
+    legend_h = [mpatches.Patch(color=STATE_COLOR[s], alpha=0.7, label=s.name)
+                for s in State]
+    ax2.legend(handles=legend_h, fontsize=7, loc="upper right", ncol=3)
 
     # ── Panel 3: value / background ratio ──
     ax3 = fig.add_subplot(gs[2], sharex=ax1)
