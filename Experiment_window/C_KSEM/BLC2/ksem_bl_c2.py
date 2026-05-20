@@ -92,7 +92,7 @@ from matplotlib.gridspec import GridSpec
 # ============================================================
 
 # 논문 Section 3
-TRIGGER_PCT            = 20.00   # threshold = background x 1.25
+TRIGGER_PCT            = 10.00   # threshold = background x 1.25
 CONSECUTIVE_FOR_ALERT  = 2      # 연속 N회 초과 → ALERT (논문 case 2, 15분 x 2=30분)
 BACKGROUND_WINDOW_DAYS = 5      # 직전 5일 preceding window
 
@@ -106,7 +106,7 @@ MIN_HISTORY_PTS = int(BACKGROUND_WINDOW_DAYS * 24 * 60 / RESAMPLE_MIN)  # 480포
 # OU  event logic: bin index 25~41
 # OUT event logic: bin index 46~56
 PROTON_BINS = (
-    list(range(1, 24)) +    # O
+    #list(range(1, 24)) +    # O
     list(range(25, 42)) +   # OU
     list(range(46, 57))     # OUT
 )
