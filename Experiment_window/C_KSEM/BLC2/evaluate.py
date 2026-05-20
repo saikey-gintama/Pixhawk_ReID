@@ -64,7 +64,7 @@ import pandas as pd
 
 # ── 논문 고정값 (ksem_bl_c2.py 와 동일하게 유지) ──────────────────────────
 RESAMPLE_MIN         = 15   # 15분 cadence
-TRIGGER_MATCH_MARGIN = 30   # PRE_ALERT onset이 gt onset 이전 N분까지 correct로 인정
+TRIGGER_MATCH_MARGIN = 360  # PRE_ALERT onset이 gt onset 이전 N분까지 correct로 인정 (기본 6시간)
 
 
 # ============================================================
@@ -179,10 +179,20 @@ def compute_far_detection(
     매칭 기준:
       PRE_ALERT onset이 gt onset 이전 margin_min 분 ~ gt end 사이이면 correct.
       하나의 gt 이벤트에 여러 트리거가 매칭되면 첫 번째만 correct로 계산.
+
+    추가:
+      nearest_match — 각 트리거에 대해 가장 가까운 GT 이벤트와의 거리(분) 계산.
+      missed_events — 감지 못한 GT 이벤트 목록과 가장 가까운 트리거와의 거리.
     """
-    correct        = 0
-    false_t        = 0
-    detected_gt    = set()
+    correct     = 0
+    false_t     = 0
+    detected_gt = set()
+
+    # GT onset 타임스탬프 목록 (nearest 계산용)
+    gt_onsets = [pd.Timestamp(ev["onset"]) for ev in known_events]
+
+    nearest_details = []   # false trigger별 nearest GT 정보
+    correct_details = []   # correct trigger별 매칭 GT 정보
 
     for pre_t in pre_alert_times:
         matched = False
@@ -191,13 +201,62 @@ def compute_far_detection(
             end   = pd.Timestamp(ev["end"])
             window_start = onset - pd.Timedelta(minutes=margin_min)
             if window_start <= pre_t <= end:
-                if i not in detected_gt:   # 중복 correct 방지
+                if i not in detected_gt:
                     correct += 1
                     detected_gt.add(i)
+                    correct_details.append({
+                        "trigger":        str(pre_t),
+                        "gt_onset":       ev["onset"],
+                        "gt_end":         ev["end"],
+                        "offset_min":     round((pre_t - onset).total_seconds() / 60, 1),
+                        "peak_pfu":       ev.get("peak_pfu"),
+                    })
                 matched = True
                 break
+
         if not matched:
             false_t += 1
+            # 가장 가까운 GT 이벤트 찾기
+            if gt_onsets:
+                diffs = [(abs((pre_t - gt).total_seconds() / 60), j)
+                         for j, gt in enumerate(gt_onsets)]
+                min_diff, nearest_idx = min(diffs)
+                nearest_ev = known_events[nearest_idx]
+                nearest_details.append({
+                    "trigger":          str(pre_t),
+                    "nearest_gt_onset": nearest_ev["onset"],
+                    "nearest_gt_end":   nearest_ev["end"],
+                    "dist_to_onset_min": round(min_diff, 1),
+                    "trigger_before_gt": pre_t < gt_onsets[nearest_idx],
+                    "peak_pfu":         nearest_ev.get("peak_pfu"),
+                })
+
+    # 감지 못한 GT 이벤트별 → 가장 가까운 트리거와의 거리
+    missed_details = []
+    for i, ev in enumerate(known_events):
+        if i not in detected_gt:
+            gt_onset = pd.Timestamp(ev["onset"])
+            if pre_alert_times:
+                diffs = [(abs((t - gt_onset).total_seconds() / 60), t)
+                         for t in pre_alert_times]
+                min_diff, nearest_t = min(diffs)
+                missed_details.append({
+                    "gt_onset":              ev["onset"],
+                    "gt_end":                ev["end"],
+                    "peak_pfu":              ev.get("peak_pfu"),
+                    "nearest_trigger":       str(nearest_t),
+                    "dist_to_trigger_min":   round(min_diff, 1),
+                    "dist_to_trigger_hr":    round(min_diff / 60, 2),
+                })
+            else:
+                missed_details.append({
+                    "gt_onset":  ev["onset"],
+                    "gt_end":    ev["end"],
+                    "peak_pfu":  ev.get("peak_pfu"),
+                    "nearest_trigger":     None,
+                    "dist_to_trigger_min": None,
+                    "dist_to_trigger_hr":  None,
+                })
 
     denom = false_t + correct
     far   = round(false_t / denom, 4) if denom > 0 else 0.0
@@ -210,6 +269,10 @@ def compute_far_detection(
         "n_false_triggers":     false_t,
         "n_detected_gt_events": len(detected_gt),
         "n_total_gt_events":    len(known_events),
+        # 상세 매칭 정보
+        "correct_matches":      correct_details,
+        "false_trigger_nearest": nearest_details,
+        "missed_gt_events":     missed_details,
     }
 
 
@@ -373,6 +436,49 @@ def print_results(results: dict):
 
     print("\n" + "=" * (w + 20))
 
+    # ── 감지된 GT 이벤트 상세 ──
+    correct_matches = results.get("correct_matches", [])
+    if correct_matches:
+        print(f"\n[ 감지된 GT 이벤트 ({len(correct_matches)}건) ]")
+        print(f"  {'trigger':<20} {'gt_onset':<20} {'offset':>10} {'pfu':>6}")
+        print("  " + "─" * 60)
+        for m in correct_matches:
+            offset = m["offset_min"]
+            sign   = "+" if offset >= 0 else ""
+            print(f"  {m['trigger']:<20} {m['gt_onset']:<20} "
+                  f"{sign}{offset:>8.0f}m {str(m.get('peak_pfu','?')):>6}")
+
+    # ── 놓친 GT 이벤트 상세 ──
+    missed = results.get("missed_gt_events", [])
+    if missed:
+        print(f"\n[ 놓친 GT 이벤트 ({len(missed)}건) — 가장 가까운 트리거와의 거리 ]")
+        print(f"  {'gt_onset':<20} {'pfu':>6}  {'nearest_trigger':<20} {'dist':>10}")
+        print("  " + "─" * 62)
+        for m in missed:
+            dist  = m.get("dist_to_trigger_min")
+            dist_s = f"{dist/60:.1f}hr" if dist is not None else "N/A"
+            nt    = (m.get("nearest_trigger") or "N/A")[:19]
+            print(f"  {m['gt_onset']:<20} {str(m.get('peak_pfu','?')):>6}  "
+                  f"{nt:<20} {dist_s:>10}")
+
+    # ── False trigger — GT에 가장 가까운 순 Top 10 ──
+    false_nearest = results.get("false_trigger_nearest", [])
+    if false_nearest:
+        sorted_fn = sorted(false_nearest,
+                           key=lambda x: x.get("dist_to_onset_min", float("inf")))
+        print(f"\n[ False Trigger — GT onset과 가장 가까운 순 Top 10 "
+              f"(match_margin={results.get('match_margin_min')}min) ]")
+        print(f"  {'trigger':<20} {'nearest_gt_onset':<20} {'dist':>10} {'pfu':>6}")
+        print("  " + "─" * 60)
+        for fn in sorted_fn[:10]:
+            dist = fn.get("dist_to_onset_min", 0)
+            print(f"  {fn['trigger']:<20} {fn['nearest_gt_onset']:<20} "
+                  f"{dist/60:>8.1f}hr {str(fn.get('peak_pfu','?')):>6}")
+        if len(false_nearest) > 10:
+            print(f"  ... 외 {len(false_nearest)-10}건")
+
+    print("")
+
 
 def save_results(results: dict, output_path: Path):
     """JSON 저장."""
@@ -417,7 +523,8 @@ def main():
         help="결과 JSON 저장 경로 (기본: states CSV 와 같은 폴더에 evaluate_{tag}.json)")
     parser.add_argument(
         "--margin_min", type=int, default=TRIGGER_MATCH_MARGIN,
-        help=f"FAR 매칭 허용 마진(분) (기본: {TRIGGER_MATCH_MARGIN}분)")
+        help=f"FAR 매칭 허용 마진(분): 트리거가 gt_onset 이전 N분까지 correct로 인정 "
+             f"(기본: {TRIGGER_MATCH_MARGIN}분 = 6시간)")
 
     args = parser.parse_args()
 
