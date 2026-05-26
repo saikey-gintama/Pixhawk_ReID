@@ -1,0 +1,14 @@
+__pycache__/
+output*/
+ana_output/
+
+# 대용량 데이터/캐시
+*_cache_parquet/
+*.parquet
+*_nc/
+*.nc
+*_cache.json
+
+# 안쓰는 폴더
+GOES/
+NOAA_GOES/
