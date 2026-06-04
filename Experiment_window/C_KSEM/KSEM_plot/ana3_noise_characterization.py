@@ -5,34 +5,31 @@ Quiet period 노이즈 특성 분석
 
 Spike vs Onset 구분:
   spike : Quiet 기간 중 갑작스럽게 튀는 비정상 데이터 포인트.
-          60분 이동 중앙값의 SPIKE_MULTIPLIER배 초과로 정의.
+          ROLLING_WINDOW분 이동 중앙값의 SPIKE_MULTIPLIER배 초과로 정의.
           원인: SEU(Single Event Upset), EMI 등 계측 노이즈.
-  onset : SPE 이벤트 시작점 (ana2·ana4에서 별도 정의).
-          물리적 입자 증가이며 최소 MIN_SPE_DURATION_H 이상 지속됨.
+  onset : SPE/E_SPE 이벤트 시작점 (ana2·ana4에서 별도 정의).
+          물리적 입자 증가이며 최소 MIN_*_DURATION_H 이상 지속됨.
 
-전자(electron) 채널:
-  배경 추세(ana3_background_trend.png)에서만 사용.
-  SPE 판정은 proton proxy만 사용.
+분석 구조:
+  proton count (O/OU/OUT) — quiet_p 마스크 사용
+  electron count (F/FT/FTU/FTUO) — quiet_e 마스크 사용
+  각각 독립적으로 Poisson QQ / spike / CR 상관 분석 수행.
 
 출력:
-  ana3_poisson_qq.png
-    Poisson QQ: y=x 이탈 → 과분산(overdispersed). ID=Var/Mean 표시.
-    ID≈1: 순수 랜덤 노이즈 / ID≫1: 클러스터링 또는 다른 신호 혼입.
-  ana3_background_trend.png
-    월별 median flux — 전자(E1-E6)와 양성자(E8-E10) 채널 분리.
-  ana3_spike_analysis.png
-    상단: spike rate 막대 (SPIKE_MULTIPLIER × rolling median 초과 비율)
-    하단: A/B 동시 spike 일치율 → AND gate FAR 억제 효과 추정
-  ana3_cr_correlation.png
-    CR 채널 vs O/OU/OUT count 산점도 (Pearson r)
-    r이 높으면 CR을 veto 채널로 활용 가능
-  ana3_count_noise_stats.json
+  ana3_poisson_qq.png              proton Poisson QQ
+  ana3_spike_analysis.png          proton spike rate / A/B 일치율
+  ana3_cr_correlation.png          CR vs proton count Pearson r
+  ana3_count_noise_stats.json      proton 노이즈 통계
+
+  ana3_electron_poisson_qq.png     electron Poisson QQ
+  ana3_electron_spike_analysis.png electron spike rate / A/B 일치율
+  ana3_electron_cr_correlation.png CR vs electron count Pearson r
+  ana3_electron_noise_stats.json   electron 노이즈 통계
+  (E_SPE_PROXY_THRESH=None 이면 electron quiet 마스크를 proton과 동일하게 사용)
 
 튜닝값 (이 파일 단독):
   SPIKE_MULTIPLIER : 이동 중앙값의 이 배를 초과하면 spike로 판정.
-                     낮추면 민감도 상승(false spike 증가), 높이면 보수적.
   ROLLING_WINDOW   : spike 판정용 이동 중앙값 윈도우 [분].
-                     짧으면 지역 변동에 민감, 길면 완만한 상승을 spike로 미인정.
 """
 
 from __future__ import annotations
@@ -44,39 +41,48 @@ sys.path.insert(0, str(Path(__file__).parent))
 import numpy as np
 import pandas as pd
 from scipy import stats
-import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 
 import ksem_flux_config as cfg
 from ksem_flux_config import (
-    COUNT_PARQUET_DIR, FLUX_PARQUET_DIR, OUTPUT_DIR,
-    PROTON_CHANNELS, ELECTRON_CHANNELS,
-    SPE_PROXY_CHANNELS, SPE_PROXY_THRESH,
-    ELECTRON_BG_CHANNELS, PROTON_BG_CHANNELS,
-    COUNT_PROTON_LOGICS, COUNT_PD_KEYS, COUNT_SIDES,
+    OUTPUT_DIR,
+    SPE_PROXY_THRESH, E_SPE_PROXY_THRESH,
+    COUNT_PROTON_LOGICS, COUNT_ELECTRON_LOGICS, COUNT_PD_KEYS, COUNT_SIDES,
+    BG_WINDOW_DAYS, BG_QUIET_DAYS,
 )
-import ksem_io
-import kma_ksem_flux_io
+from ksem_common import (
+    load_data,
+    make_proton_proxy,
+    make_electron_proxy,
+    detect_proton_events,
+    detect_electron_events,
+    get_quiet_bg_samples,
+)
 
 # ── ana3 단독 튜닝값 ──────────────────────────────────────────────
 SPIKE_MULTIPLIER = 5.0   # rolling median의 이 배를 초과하면 spike
 ROLLING_WINDOW   = 60    # [분] spike 판정용 이동 중앙값 윈도우
+# BG_WINDOW_DAYS / BG_QUIET_DAYS 는 config에서 공유 (ana2·ana4와 동일)
 
 
 # ─────────────────────────────────────────────────────────────────
+
 def get_quiet_mask(df_count: pd.DataFrame,
-                   df_flux_proton: pd.DataFrame) -> pd.Series:
-    """count 인덱스 기준 quiet 마스크. proxy < SPE_PROXY_THRESH 이면 True."""
-    proxy = pd.Series(0.0, index=df_flux_proton.index)
-    for ch in SPE_PROXY_CHANNELS:
-        if ch in df_flux_proton.columns:
-            lo, hi = PROTON_CHANNELS[ch]
-            proxy += df_flux_proton[ch].fillna(0) * (hi - lo)
-    proxy[proxy == 0] = np.nan
+                   proxy: pd.Series,
+                   thresh: float,
+                   label: str) -> pd.Series:
+    """
+    count 인덱스 기준 quiet 마스크.
+    proxy < thresh 이면 True (quiet).
+    thresh=None 이면 전체를 quiet로 간주.
+    """
+    if thresh is None:
+        print(f"[ana3] {label} quiet: thresh=None → 전체를 quiet로 간주")
+        return pd.Series(True, index=df_count.index)
     proxy_aligned = proxy.reindex(df_count.index, method="nearest",
                                   tolerance="5min")
-    mask = (proxy_aligned < SPE_PROXY_THRESH) | proxy_aligned.isna()
-    print(f"[ana3] Quiet: {mask.sum():,} / {len(mask):,} points")
+    mask = (proxy_aligned < thresh) | proxy_aligned.isna()
+    print(f"[ana3] {label} Quiet: {mask.sum():,} / {len(mask):,} points")
     return mask
 
 
@@ -96,22 +102,29 @@ def poisson_id(series: pd.Series) -> dict:
             "n": int(len(v))}
 
 
-def plot_qq(df_count: pd.DataFrame, quiet_mask: pd.Series):
+def plot_qq(df_count: pd.DataFrame,
+            quiet_mask: pd.Series,
+            logics: list[str],
+            suffix: str = "") -> dict:
     """
-    Poisson QQ 플롯 (6행 × 3열).
+    Poisson QQ 플롯 (6행 × len(logics)열).
     y=x 대각선 위로 벗어날수록 over-dispersed.
+    suffix="" → proton / suffix="_electron" → electron
+    반환: poisson_stats dict
     """
     nrows = len(COUNT_PD_KEYS) * len(COUNT_SIDES)
-    ncols = len(COUNT_PROTON_LOGICS)
+    ncols = len(logics)
     fig, axes = plt.subplots(nrows, ncols,
                               figsize=(4.5 * ncols, 3.2 * nrows), squeeze=False)
-    fig.suptitle("Poisson QQ  (Quiet period)\n"
+    label = "Electron  (Quiet period)" if suffix else "Proton  (Quiet period)"
+    fig.suptitle(f"Poisson QQ  {label}\n"
                  "y=x: Poisson | above y=x: overdispersed (ID > 1)", fontsize=11)
 
+    poisson_stats = {}
     row = 0
     for pd_key in COUNT_PD_KEYS:
         for side in COUNT_SIDES:
-            for ci, logic in enumerate(COUNT_PROTON_LOGICS):
+            for ci, logic in enumerate(logics):
                 ax = axes[row][ci]
                 try:
                     s = df_count[pd_key, side, logic][quiet_mask].dropna()
@@ -142,113 +155,124 @@ def plot_qq(df_count: pd.DataFrame, quiet_mask: pd.Series):
                 ax.set_ylabel("Observed quantile", fontsize=6)
                 ax.tick_params(labelsize=5)
                 ax.legend(fontsize=5)
+
+                poisson_stats[f"{pd_key}_{side}_{logic}"] = pid
             row += 1
 
     fig.tight_layout()
-    out = OUTPUT_DIR / "ana3_poisson_qq.png"
+    out = OUTPUT_DIR / f"ana3{suffix}_poisson_qq.png"
     fig.savefig(out, dpi=120, bbox_inches="tight")
     plt.close(fig)
     print(f"[ana3] Poisson QQ saved: {out}")
+    return poisson_stats
+
+
 
 
 # ─────────────────────────────────────────────────────────────────
-# (2) 배경 장기 추세 — 전자/양성자 분리
+# (1b) 배경 추정 샘플 Poisson QQ
 # ─────────────────────────────────────────────────────────────────
-def plot_background_trend(df_flux_electron: pd.DataFrame,
-                          df_flux_proton:   pd.DataFrame,
-                          quiet_mask_flux:  pd.Series):
+def plot_bg_qq(df_count: pd.DataFrame,
+               events: list,
+               logics: list[str],
+               suffix: str = "") -> dict:
     """
-    월별 median flux 추세 (Quiet 기간만).
-    상단: 전자(E1~E6) / 하단: 양성자(E8~E10) — 각각 채널별 선.
-    SC25 태양활동 상승 추세 확인용.
+    get_bg_median이 실제로 선택한 날짜의 count만 모아 Poisson QQ 작성.
+
+    기존 plot_qq는 proxy < thresh 구간 전체(이벤트 오염 가능)를 사용.
+    이 함수는 ana2 배경 추정에 실제로 쓰인 데이터(BG_WINDOW_DAYS 중
+    가장 조용한 BG_QUIET_DAYS일)만 사용하므로 배경 순도를 검증할 수 있다.
+
+    출력 파일명:
+      ana3_bg_poisson_qq.png        (proton)
+      ana3_electron_bg_poisson_qq.png (electron)
     """
-    fig, (ax_e, ax_p) = plt.subplots(2, 1, figsize=(14, 7), sharex=True)
-    cmap_e = plt.cm.Blues_r
-    cmap_p = plt.cm.Oranges_r
+    nrows = len(COUNT_PD_KEYS) * len(COUNT_SIDES)
+    ncols = len(logics)
+    fig, axes = plt.subplots(nrows, ncols,
+                              figsize=(4.5 * ncols, 3.2 * nrows), squeeze=False)
+    label = "Electron" if suffix else "Proton"
+    fig.suptitle(
+        f"Poisson QQ  {label}  (BG-estimated samples only)\n"
+        f"Lowe bg estimation: quietest {BG_QUIET_DAYS} days of {BG_WINDOW_DAYS}-day window",
+        fontsize=11)
 
-    # 전자
-    quiet_mask_e = (quiet_mask_flux
-                    .reindex(df_flux_electron.index, method="nearest",
-                             tolerance=pd.Timedelta("2min"))
-                    .astype(float).fillna(1.0).astype(bool))
-    has_e_data = False
-    for i, ch in enumerate(ELECTRON_BG_CHANNELS):
-        if ch not in df_flux_electron.columns:
-            continue
-        lo, hi = ELECTRON_CHANNELS.get(ch, (0, 0))
-        s = df_flux_electron[ch][quiet_mask_e].dropna()
-        s = s[s > 0]
-        if s.empty:
-            continue
-        monthly = s.resample("1ME").median().dropna()
-        if monthly.empty or (monthly <= 0).all():
-            continue
-        color = cmap_e(0.2 + 0.6 * i / max(len(ELECTRON_BG_CHANNELS) - 1, 1))
-        ax_e.semilogy(monthly.index, monthly.values, lw=1.2, color=color,
-                      label=f"{ch} ({lo}-{hi} keV)")
-        has_e_data = True
-    if not has_e_data:
-        ax_e.text(0.5, 0.5, "No valid electron flux data in quiet period",
-                  transform=ax_e.transAxes, ha="center", va="center")
-    ax_e.set_ylabel("Electron flux median\n[cm-2 sr-1 s-1 keV-1]", fontsize=9)
-    ax_e.set_title("Electron channels — Monthly Quiet background trend (SC25)", fontsize=10)
-    if has_e_data:
-        ax_e.legend(fontsize=7, ncol=3)
-    ax_e.grid(True, which="both", alpha=0.3)
+    bg_stats = {}
+    row = 0
+    for pd_key in COUNT_PD_KEYS:
+        for side in COUNT_SIDES:
+            for ci, logic in enumerate(logics):
+                ax = axes[row][ci]
+                try:
+                    cnt_series = df_count[pd_key, side, logic]
+                except KeyError:
+                    ax.set_visible(False)
+                    continue
 
-    # 양성자
-    quiet_mask_p = (quiet_mask_flux
-                    .reindex(df_flux_proton.index, method="nearest",
-                             tolerance=pd.Timedelta("2min"))
-                    .astype(float).fillna(1.0).astype(bool))
-    has_p_data = False
-    for i, ch in enumerate(PROTON_BG_CHANNELS):
-        if ch not in df_flux_proton.columns:
-            continue
-        lo, hi = PROTON_CHANNELS.get(ch, (0, 0))
-        s = df_flux_proton[ch][quiet_mask_p].dropna()
-        s = s[s > 0]
-        if s.empty:
-            continue
-        monthly = s.resample("1ME").median().dropna()
-        if monthly.empty or (monthly <= 0).all():
-            continue
-        color = cmap_p(0.2 + 0.6 * i / max(len(PROTON_BG_CHANNELS) - 1, 1))
-        ax_p.semilogy(monthly.index, monthly.values, lw=1.2, color=color,
-                      label=f"{ch} ({lo//1000:.0f}-{hi//1000:.0f} MeV)")
-        has_p_data = True
-    if not has_p_data:
-        ax_p.text(0.5, 0.5, "No valid proton flux data in quiet period",
-                  transform=ax_p.transAxes, ha="center", va="center")
-    ax_p.set_ylabel("Proton flux median\n[cm-2 sr-1 s-1 keV-1]", fontsize=9)
-    ax_p.set_title("Proton channels — Monthly Quiet background trend (SC25)", fontsize=10)
-    if has_p_data:
-        ax_p.legend(fontsize=7, ncol=3)
-    ax_p.grid(True, which="both", alpha=0.3)
-    ax_p.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
-    ax_p.tick_params(axis="x", rotation=30, labelsize=7)
+                # ── 배경 추정에 실제로 쓰인 샘플 추출 ──────────────
+                bg_samples = get_quiet_bg_samples(
+                    cnt_series, events, BG_WINDOW_DAYS, BG_QUIET_DAYS)
 
-    fig.suptitle("Quiet background trend — Electron vs Proton", fontsize=12)
+                vals = bg_samples.dropna().values
+                vals = vals[vals >= 0]
+                key  = f"{pd_key}_{side}_{logic}"
+
+                if len(vals) < 20:
+                    ax.text(0.5, 0.5,
+                            f"Insufficient\n(n={len(vals)})",
+                            transform=ax.transAxes,
+                            ha="center", va="center", fontsize=7, color="gray")
+                    ax.set_title(f"{pd_key}-{side} / {logic}", fontsize=7)
+                    bg_stats[key] = {"mean": np.nan, "var": np.nan,
+                                     "ID": np.nan, "n": len(vals)}
+                    continue
+
+                lam   = float(np.mean(vals))
+                var   = float(np.var(vals, ddof=1))
+                ID    = var / lam if lam > 0 else np.nan
+                probs = np.linspace(0.01, 0.99, 100)
+                pq    = stats.poisson.ppf(probs, mu=lam)
+                dq    = np.quantile(vals, probs)
+
+                ax.scatter(pq, dq, s=7, alpha=0.6, color="#27ae60")
+                lim = max(float(pq[-1]), float(dq[-1])) * 1.05
+                ax.plot([0, lim], [0, lim], "r--", lw=1, label="y=x")
+
+                id_str = f"{ID:.2f}" if np.isfinite(ID) else "N/A"
+                ax.set_title(
+                    f"{pd_key}-{side} / {logic}\n"
+                    f"ID={id_str}  λ={lam:.1f}  n={len(vals):,}",
+                    fontsize=7)
+                ax.set_xlabel("Poisson Theoretical quantile", fontsize=6)
+                ax.set_ylabel("Observed quantile", fontsize=6)
+                ax.tick_params(labelsize=5)
+                ax.legend(fontsize=5)
+
+                bg_stats[key] = {"mean": lam, "var": var, "ID": ID, "n": int(len(vals))}
+            row += 1
+
     fig.tight_layout()
-    out = OUTPUT_DIR / "ana3_background_trend.png"
+    out = OUTPUT_DIR / f"ana3{suffix}_bg_poisson_qq.png"
     fig.savefig(out, dpi=120, bbox_inches="tight")
     plt.close(fig)
-    print(f"[ana3] background trend saved: {out}")
-
+    print(f"[ana3] BG Poisson QQ saved: {out}")
+    return bg_stats
 
 # ─────────────────────────────────────────────────────────────────
-# (3) Spike 분석
+# (2) Spike 분석
 # ─────────────────────────────────────────────────────────────────
 def spike_analysis(df_count: pd.DataFrame,
-                   quiet_mask: pd.Series) -> dict:
+                   quiet_mask: pd.Series,
+                   logics: list[str]) -> dict:
     """
     Quiet 기간 중 spike 탐지.
-    spike 정의: count > SPIKE_MULTIPLIER × ROLLING_WINDOW분 이동 중앙값
-    A/B 동시 spike 일치율: AND gate 적용 시 FAR(오경보율) 억제 추정에 사용.
+    spike: count > SPIKE_MULTIPLIER × ROLLING_WINDOW분 이동 중앙값
+    A/B 동시 spike 일치율: AND gate FAR 억제 추정에 사용.
+    logics로 proton/electron 공용.
     """
     out = {}
     for pd_key in COUNT_PD_KEYS:
-        for logic in COUNT_PROTON_LOGICS:
+        for logic in logics:
             spA = spB = None
             for side in COUNT_SIDES:
                 try:
@@ -275,20 +299,23 @@ def spike_analysis(df_count: pd.DataFrame,
     return out
 
 
-def plot_spike_summary(spike_stats: dict):
+def plot_spike_summary(spike_stats: dict, suffix: str = ""):
+    """suffix="" → proton / suffix="_electron" → electron"""
     rate_d  = {k: v["spike_rate"] for k, v in spike_stats.items()
                if "spike_rate" in v}
     coinc_d = {k: v["AB_coincidence_rate"] for k, v in spike_stats.items()
                if "AB_coincidence_rate" in v}
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 8))
+    label = "Electron" if suffix else "Proton"
 
     ax1.bar(range(len(rate_d)), list(rate_d.values()), color="#e74c3c", alpha=0.75)
     ax1.set_xticks(range(len(rate_d)))
     ax1.set_xticklabels(list(rate_d.keys()), rotation=55, ha="right", fontsize=7)
     ax1.set_ylabel("Spike rate", fontsize=9)
     ax1.set_title(
-        f"Spike Rate  (>{SPIKE_MULTIPLIER}× rolling-{ROLLING_WINDOW}min median, Quiet period)",
+        f"{label} Spike Rate  "
+        f"(>{SPIKE_MULTIPLIER}× rolling-{ROLLING_WINDOW}min median, Quiet period)",
         fontsize=10)
     ax1.grid(True, axis="y", alpha=0.3)
 
@@ -296,45 +323,52 @@ def plot_spike_summary(spike_stats: dict):
     ax2.set_xticks(range(len(coinc_d)))
     ax2.set_xticklabels(list(coinc_d.keys()), rotation=40, ha="right", fontsize=8)
     ax2.set_ylabel("A/B Coincidence Rate", fontsize=9)
-    ax2.set_title("A/B Coincidence Rate  (AND gate FAR reduction estimate)", fontsize=10)
+    ax2.set_title(f"{label} A/B Coincidence Rate  (AND gate FAR reduction estimate)",
+                  fontsize=10)
     ax2.grid(True, axis="y", alpha=0.3)
 
     fig.tight_layout()
-    out = OUTPUT_DIR / "ana3_spike_analysis.png"
+    out = OUTPUT_DIR / f"ana3{suffix}_spike_analysis.png"
     fig.savefig(out, dpi=120, bbox_inches="tight")
     plt.close(fig)
     print(f"[ana3] Spike analysis saved: {out}")
 
 
 # ─────────────────────────────────────────────────────────────────
-# (4) CR 채널 상관성
+# (3) CR 채널 상관성
 # ─────────────────────────────────────────────────────────────────
-def plot_cr_correlation(df_count: pd.DataFrame, quiet_mask: pd.Series):
+def plot_cr_correlation(df_count: pd.DataFrame,
+                        quiet_mask: pd.Series,
+                        logics: list[str],
+                        suffix: str = ""):
     """
-    CR(Cosmic Ray) 채널 vs proton count (O/OU/OUT) Pearson 상관.
-    r이 높으면 CR 채널을 veto 채널로 활용하여 배경 노이즈를 줄일 수 있음.
+    CR(Cosmic Ray) 채널 vs count Pearson 상관.
+    CR 검출 한계(65535 = 16bit 최대값) 초과 포인트 제거.
+    r이 높으면 CR 채널을 veto 채널로 활용 가능.
+    suffix="" → proton / suffix="_electron" → electron
     """
     nrows = len(COUNT_PD_KEYS)
-    ncols = len(COUNT_PROTON_LOGICS)
+    ncols = len(logics)
     fig, axes = plt.subplots(nrows, ncols,
                               figsize=(4.5 * ncols, 3.5 * nrows), squeeze=False)
-    fig.suptitle("CR channel vs Proton Count  (Quiet period)\n"
+    label = "Electron" if suffix else "Proton"
+    fig.suptitle(f"CR channel vs {label} Count  (Quiet period)\n"
                  "high Pearson r → CR usable as veto channel", fontsize=11)
 
     for ri, pd_key in enumerate(COUNT_PD_KEYS):
-        for ci, logic in enumerate(COUNT_PROTON_LOGICS):
+        for ci, logic in enumerate(logics):
             ax = axes[ri][ci]
             for side in COUNT_SIDES:
                 try:
                     cr  = df_count[pd_key, side, "CR"][quiet_mask].dropna()
-                    pro = df_count[pd_key, side, logic][quiet_mask].dropna()
+                    cnt = df_count[pd_key, side, logic][quiet_mask].dropna()
                 except KeyError:
                     continue
-                idx = cr.index.intersection(pro.index)
+                idx = cr.index.intersection(cnt.index)
                 if len(idx) < 20:
                     continue
-                x, y = cr.loc[idx].values, pro.loc[idx].values
-                valid = x <= 65535      # 추가: CR 검출 한계(65535 = 16bit 최대값) 초과 포인트 제거
+                x, y  = cr.loc[idx].values, cnt.loc[idx].values
+                valid = x <= 65535   # CR 16bit 검출 한계 초과 제거
                 x, y  = x[valid], y[valid]
 
                 ax.scatter(x, y, s=3, alpha=0.2, rasterized=True, label=side)
@@ -349,68 +383,75 @@ def plot_cr_correlation(df_count: pd.DataFrame, quiet_mask: pd.Series):
             ax.legend(fontsize=6)
 
     fig.tight_layout()
-    out = OUTPUT_DIR / "ana3_cr_correlation.png"
+    out = OUTPUT_DIR / f"ana3{suffix}_cr_correlation.png"
     fig.savefig(out, dpi=120, bbox_inches="tight")
     plt.close(fig)
     print(f"[ana3] CR correlation saved: {out}")
 
 
 # ─────────────────────────────────────────────────────────────────
-def main():
-    print("[ana3] Loading data...")
-    df_count, _ = ksem_io.load(COUNT_PARQUET_DIR)
-    sensor_data, _ = kma_ksem_flux_io.load(FLUX_PARQUET_DIR)
-    df_flux_p = sensor_data.get("proton",   pd.DataFrame())
-    df_flux_e = sensor_data.get("electron", pd.DataFrame())
-
-    for df in [df_count, df_flux_p, df_flux_e]:
-        if not df.empty and df.index.tz is None:
-            df.index = df.index.tz_localize("UTC")
-
-    quiet_count = get_quiet_mask(df_count, df_flux_p)
-
-    # flux 인덱스 기준 quiet 마스크 (배경 추세 플롯용)
-    proxy_flux = pd.Series(0.0, index=df_flux_p.index)
-    for ch in SPE_PROXY_CHANNELS:
-        if ch in df_flux_p.columns:
-            lo, hi = PROTON_CHANNELS[ch]
-            proxy_flux += df_flux_p[ch].fillna(0) * (hi - lo)
-    proxy_flux[proxy_flux == 0] = np.nan
-    quiet_flux = (proxy_flux < SPE_PROXY_THRESH) | proxy_flux.isna()
-
-    plot_qq(df_count, quiet_count)
-    plot_background_trend(df_flux_e, df_flux_p, quiet_flux)
-
-    spike_stats = spike_analysis(df_count, quiet_count)
-    plot_spike_summary(spike_stats)
-
-    plot_cr_correlation(df_count, quiet_count)
-
-    # Poisson ID 집계
-    poisson_stats = {}
-    for pd_key in COUNT_PD_KEYS:
-        for side in COUNT_SIDES:
-            for logic in COUNT_PROTON_LOGICS:
-                try:
-                    s = df_count[pd_key, side, logic][quiet_count]
-                except KeyError:
-                    continue
-                poisson_stats[f"{pd_key}_{side}_{logic}"] = poisson_id(s)
-
-    out_json = OUTPUT_DIR / "ana3_count_noise_stats.json"
+def save_noise_stats(poisson_stats: dict, spike_stats: dict,
+                     thresh: float | None, suffix: str = "",
+                     bg_poisson_stats: dict | None = None):
+    label = "e_spe_proxy_thresh" if suffix else "spe_proxy_thresh"
+    out_json = OUTPUT_DIR / f"ana3{suffix}_noise_stats.json"
+    payload = {"poisson":    poisson_stats,
+               "spike":      spike_stats,
+               "config":     {"spike_multiplier":   SPIKE_MULTIPLIER,
+                              "rolling_window_min": ROLLING_WINDOW,
+                              "bg_window_days":     BG_WINDOW_DAYS,
+                              "bg_quiet_days":      BG_QUIET_DAYS,
+                              label:                thresh}}
+    if bg_poisson_stats is not None:
+        payload["bg_poisson"] = bg_poisson_stats
     with open(out_json, "w", encoding="utf-8") as f:
-        json.dump({"poisson": poisson_stats,
-                   "spike":   spike_stats,
-                   "config":  {"spike_multiplier":    SPIKE_MULTIPLIER,
-                               "rolling_window_min":  ROLLING_WINDOW,
-                               "spe_proxy_thresh":    SPE_PROXY_THRESH}},
-                  f, indent=2, ensure_ascii=False)
+        json.dump(payload, f, indent=2, ensure_ascii=False)
     print(f"[ana3] noise stats saved: {out_json}")
 
-    print("\n[ana3] Poisson ID summary:")
+    print(f"\n[ana3] Poisson ID summary ({('electron' if suffix else 'proton')}):")
     for k, v in poisson_stats.items():
         id_s = f'{v["ID"]:.2f}' if np.isfinite(v.get("ID", np.nan)) else "N/A"
         print(f"  {k:25s}  ID={id_s}  n={v.get('n', 0):,}")
+
+
+# ─────────────────────────────────────────────────────────────────
+def main():
+    print("[ana3] Loading data...")
+    df_count, df_flux_p, df_flux_e = load_data()
+
+    # ── Proxy 생성 & 이벤트 탐지 ─────────────────────────────────
+    proxy_p  = make_proton_proxy(df_flux_p)
+    proxy_e  = make_electron_proxy(df_flux_e)
+    events_p = detect_proton_events(proxy_p)
+    events_e = detect_electron_events(proxy_e)
+
+    # ── Quiet 마스크 ──────────────────────────────────────────────
+    quiet_p = get_quiet_mask(df_count, proxy_p, SPE_PROXY_THRESH,   "proton")
+    quiet_e = get_quiet_mask(df_count, proxy_e, E_SPE_PROXY_THRESH, "electron")
+
+    # ── Proton 분석 ───────────────────────────────────────────────
+    # (1a) 기존 Quiet 전체 구간 Poisson QQ
+    poisson_p = plot_qq(df_count, quiet_p, COUNT_PROTON_LOGICS, suffix="")
+    # (1b) 배경 추정 실제 사용 샘플 Poisson QQ (배경 순도 검증)
+    bg_p      = plot_bg_qq(df_count, events_p, COUNT_PROTON_LOGICS, suffix="")
+
+    spike_p = spike_analysis(df_count, quiet_p, COUNT_PROTON_LOGICS)
+    plot_spike_summary(spike_p, suffix="")
+    plot_cr_correlation(df_count, quiet_p, COUNT_PROTON_LOGICS, suffix="")
+    save_noise_stats(poisson_p, spike_p, SPE_PROXY_THRESH, suffix="",
+                     bg_poisson_stats=bg_p)
+
+    # ── Electron 분석 ─────────────────────────────────────────────
+    # (1a) 기존 Quiet 전체 구간 Poisson QQ
+    poisson_e = plot_qq(df_count, quiet_e, COUNT_ELECTRON_LOGICS, suffix="_electron")
+    # (1b) 배경 추정 실제 사용 샘플 Poisson QQ
+    bg_e      = plot_bg_qq(df_count, events_e, COUNT_ELECTRON_LOGICS, suffix="_electron")
+
+    spike_e = spike_analysis(df_count, quiet_e, COUNT_ELECTRON_LOGICS)
+    plot_spike_summary(spike_e, suffix="_electron")
+    plot_cr_correlation(df_count, quiet_e, COUNT_ELECTRON_LOGICS, suffix="_electron")
+    save_noise_stats(poisson_e, spike_e, E_SPE_PROXY_THRESH, suffix="_electron",
+                     bg_poisson_stats=bg_e)
 
 
 if __name__ == "__main__":

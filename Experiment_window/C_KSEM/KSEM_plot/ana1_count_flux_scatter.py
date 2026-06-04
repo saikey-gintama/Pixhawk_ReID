@@ -4,15 +4,16 @@ ana1_count_flux_scatter.py
 Count-Flux 상관관계 분석
 
 목적:
-  같은 시각의 KSEM count와 proton flux를 15분 리샘플 후 매칭하여
+  KSEM count와 flux를 15분 리샘플 후 매칭하여
   멱함수 "count = a * flux^b" 관계를 도출한다.
 
-  E10 단독(3.1-6.0 MeV)과 E8+E9+E10 ΔE-적분 합산(proxy) 두 가지로 분석.
+  proton: count(O/OU/OUT) × proxy_p(E8+E9+E10 ΔE-적분)
+  electron: count(F/FT/FTU/FTUO) × proxy_e(E4+E5+E6 ΔE-적분)
 
 출력:
-  ana_output/ana1_count_flux_scatter_E10.png
-  ana_output/ana1_count_flux_scatter_proxy.png
-  ana_output/ana1_count_flux_fit.csv   ← PD/side/logic별 a, b, R², RMSE
+  ana_output/ana1_count_flux_scatter_proxy_p.png
+  ana_output/ana1_count_flux_scatter_proxy_e.png
+  ana_output/ana1_count_flux_fit.csv   ← proton/electron 행 모두 포함, flux_label로 구분
 
 튜닝값 (이 파일 단독):
   RESAMPLE_FREQ : count·flux 평균 윈도우. 좁히면 노이즈 증가, 넓히면 시간해상도 저하.
@@ -32,13 +33,16 @@ import matplotlib.pyplot as plt
 
 import ksem_flux_config as cfg
 from ksem_flux_config import (
-    COUNT_PARQUET_DIR, FLUX_PARQUET_DIR, OUTPUT_DIR,
-    SPE_PROXY_CHANNELS, SPE_PROXY_THRESH, SPE_PROXY_LABEL,
-    SPE_SINGLE_CHANNEL, PROTON_CHANNELS,
-    COUNT_PROTON_LOGICS, COUNT_PD_KEYS, COUNT_SIDES,
+    OUTPUT_DIR,
+    SPE_PROXY_THRESH, SPE_PROXY_LABEL,
+    E_SPE_PROXY_THRESH, E_SPE_PROXY_LABEL,
+    COUNT_PROTON_LOGICS, COUNT_ELECTRON_LOGICS, COUNT_PD_KEYS, COUNT_SIDES,
 )
-import ksem_io
-import kma_ksem_flux_io
+from ksem_common import (
+    load_data,
+    make_proton_proxy,
+    make_electron_proxy,
+)
 
 # ── ana1 단독 튜닝값 ──────────────────────────────────────────────
 RESAMPLE_FREQ = "15min"
@@ -49,41 +53,24 @@ TS_MAX        = 5000    # Theil-Sen 서브샘플 상한 (O(n²) 메모리 제약
 def load_and_align():
     """count / flux 로드 후 15분 리샘플 & 시간 인덱스 정렬."""
     print("[ana1] Loading data...")
-    df_count, _    = ksem_io.load(COUNT_PARQUET_DIR)
-    sensor_data, _ = kma_ksem_flux_io.load(FLUX_PARQUET_DIR)
-    df_flux        = sensor_data.get("proton", pd.DataFrame())
+    df_count, df_flux_p, df_flux_e = load_data()
 
-    for df in [df_count, df_flux]:
-        if df.index.tz is None:
-            df.index = df.index.tz_localize("UTC")
+    cnt_rs    = df_count.resample(RESAMPLE_FREQ).mean()
+    flux_p_rs = df_flux_p.resample(RESAMPLE_FREQ).mean()
+    flux_e_rs = df_flux_e.resample(RESAMPLE_FREQ).mean()
 
-    cnt_rs  = df_count.resample(RESAMPLE_FREQ).mean()
-    flux_rs = df_flux.resample(RESAMPLE_FREQ).mean()
+    common_p = cnt_rs.index.intersection(flux_p_rs.index)
+    common_e = cnt_rs.index.intersection(flux_e_rs.index)
 
-    common = cnt_rs.index.intersection(flux_rs.index)
-    return cnt_rs.loc[common], flux_rs.loc[common]
+    return (cnt_rs.loc[common_p], flux_p_rs.loc[common_p],
+            cnt_rs.loc[common_e], flux_e_rs.loc[common_e])
 
 
-def make_proxy(flux_rs: pd.DataFrame) -> pd.Series:
-    """
-    E8+E9+E10 ΔE-적분 합산 proxy.
-    단위: cm-2 sr-1 s-1  (flux [cm-2 sr-1 s-1 keV-1] × ΔE [keV])
-    단순 합산 대신 채널폭 가중 적분을 사용해 에너지 범위 차이를 보정.
-    """
-    proxy = pd.Series(0.0, index=flux_rs.index)
-    for ch in SPE_PROXY_CHANNELS:
-        if ch not in flux_rs.columns:
-            print(f"  [ana1] warning: proxy 채널 {ch} 없음, 스킵")
-            continue
-        lo, hi = PROTON_CHANNELS[ch]
-        proxy += flux_rs[ch].fillna(0) * (hi - lo)
-    proxy[proxy == 0] = np.nan
-    return proxy
-
-
-def spe_mask_from(flux_s: pd.Series) -> pd.Series:
-    """flux_s >= SPE_PROXY_THRESH 인 시점을 SPE로 분류."""
-    return flux_s >= SPE_PROXY_THRESH
+def spe_mask_from(flux_s: pd.Series, thresh: float) -> pd.Series:
+    """flux_s >= thresh 인 시점을 SPE/E_SPE로 분류."""
+    if thresh is None:
+        return pd.Series(False, index=flux_s.index)
+    return flux_s >= thresh
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -91,8 +78,8 @@ def power_fit(x: np.ndarray, y: np.ndarray) -> dict:
     """
     로그공간 OLS + Theil-Sen으로 y = a * x^b 멱함수 피팅.
 
-    OLS  : 표준 최소제곱법. 이상치에 민감하나 전체 분포를 반영.
-    Theil-Sen : 이상치 강건 추정. O(n²) 메모리로 TS_MAX개 서브샘플 사용.
+    OLS       : 표준 최소제곱법. 이상치에 민감하나 전체 분포를 반영.
+    Theil-Sen : 이상치 강건 추정. O(n²) 메모리로 TS_MAX개 구간 균등 샘플 사용.
 
     반환: a_ols, b_ols, a_ts, b_ts, r2(OLS), rmse(OLS, 원단위), n
     """
@@ -133,28 +120,32 @@ def power_fit(x: np.ndarray, y: np.ndarray) -> dict:
 def draw_scatter_grid(cnt_rs: pd.DataFrame,
                       flux_s: pd.Series,
                       is_spe: pd.Series,
+                      logics: list[str],
                       flux_label: str,
-                      flux_unit: str) -> tuple[plt.Figure, list[dict]]:
+                      flux_unit: str,
+                      thresh: float | None) -> tuple[plt.Figure, list[dict]]:
     """
-    6행(PD1-A/B, PD2-A/B, PD3-A/B) × 3열(O, OU, OUT) 산점도 그리드.
-    색: Quiet=회색, SPE=오렌지 / 피팅선: OLS=파랑실선, Theil-Sen=빨강점선.
+    6행(PD1-A/B, PD2-A/B, PD3-A/B) × len(logics)열 산점도 그리드.
+    색: Quiet=회색, SPE/E_SPE=오렌지
+    피팅선: OLS=파랑실선, Theil-Sen=빨강점선
     """
     nrows = len(COUNT_PD_KEYS) * len(COUNT_SIDES)
-    ncols = len(COUNT_PROTON_LOGICS)
+    ncols = len(logics)
 
     fig, axes = plt.subplots(nrows, ncols,
                               figsize=(4.5 * ncols, 3.2 * nrows),
                               squeeze=False)
+    thresh_str = f"{thresh:.1e}" if thresh is not None else "N/A"
     fig.suptitle(
-        f"KSEM Count vs Proton Flux  [{flux_label}]\n"
-        f"15-min avg | Quiet=gray / SPE=orange | SPE: flux >= {SPE_PROXY_THRESH:.1e} {flux_unit}",
+        f"KSEM Count vs Flux  [{flux_label}]\n"
+        f"15-min avg | Quiet=gray / Event=orange | threshold: {thresh_str} {flux_unit}",
         fontsize=11, y=1.01)
 
     records = []
     row = 0
     for pd_key in COUNT_PD_KEYS:
         for side in COUNT_SIDES:
-            for col, logic in enumerate(COUNT_PROTON_LOGICS):
+            for col, logic in enumerate(logics):
                 ax = axes[row][col]
 
                 try:
@@ -179,7 +170,7 @@ def draw_scatter_grid(cnt_rs: pd.DataFrame,
                            label="Quiet", rasterized=True)
                 ax.scatter(x_all[spe_v],  y_all[spe_v],
                            s=7, alpha=0.65, color="#e67e22",
-                           label="SPE",   rasterized=True)
+                           label="Event", rasterized=True)
 
                 fit = power_fit(x_all, y_all)
                 if np.isfinite(fit["a_ols"]):
@@ -220,39 +211,40 @@ def draw_scatter_grid(cnt_rs: pd.DataFrame,
 
 # ─────────────────────────────────────────────────────────────────
 def main():
-    cnt_rs, flux_rs = load_and_align()
+    cnt_p_rs, flux_p_rs, cnt_e_rs, flux_e_rs = load_and_align()
     all_records = []
 
-    # 그림1: E10 단독 채널
-    if SPE_SINGLE_CHANNEL in flux_rs.columns:
-        flux_E10   = flux_rs[SPE_SINGLE_CHANNEL]
-        is_spe_E10 = spe_mask_from(flux_E10)
-        fig1, rec1 = draw_scatter_grid(
-            cnt_rs, flux_E10, is_spe_E10,
-            flux_label=f"{SPE_SINGLE_CHANNEL} (3.1-6.0 MeV)",
-            flux_unit="cm-2 sr-1 s-1 keV-1")
-        out1 = OUTPUT_DIR / "ana1_count_flux_scatter_E10.png"
-        fig1.savefig(out1, dpi=150, bbox_inches="tight")
-        plt.close(fig1)
-        print(f"[ana1] E10 산점도 saved: {out1}")
-        all_records.extend(rec1)
-    else:
-        print(f"[ana1] {SPE_SINGLE_CHANNEL} 채널 없음, 스킵")
-
-    # 그림2: E8+E9+E10 proxy
-    proxy      = make_proxy(flux_rs)
-    is_spe_px  = spe_mask_from(proxy)
-    fig2, rec2 = draw_scatter_grid(
-        cnt_rs, proxy, is_spe_px,
+    # ── Proton: proxy_p × proton count ───────────────────────────
+    proxy_p = make_proton_proxy(flux_p_rs)
+    is_spe  = spe_mask_from(proxy_p, SPE_PROXY_THRESH)
+    fig_p, rec_p = draw_scatter_grid(
+        cnt_p_rs, proxy_p, is_spe,
+        logics=COUNT_PROTON_LOGICS,
         flux_label=SPE_PROXY_LABEL,
-        flux_unit="cm-2 sr-1 s-1  (dE integral)")
-    out2 = OUTPUT_DIR / "ana1_count_flux_scatter_proxy.png"
-    fig2.savefig(out2, dpi=150, bbox_inches="tight")
-    plt.close(fig2)
-    print(f"[ana1] Proxy 산점도 saved: {out2}")
-    all_records.extend(rec2)
+        flux_unit="cm-2 sr-1 s-1  (dE integral)",
+        thresh=SPE_PROXY_THRESH)
+    out_p = OUTPUT_DIR / "ana1_count_flux_scatter_proxy_p.png"
+    fig_p.savefig(out_p, dpi=150, bbox_inches="tight")
+    plt.close(fig_p)
+    print(f"[ana1] Proton proxy 산점도 saved: {out_p}")
+    all_records.extend(rec_p)
 
-    # CSV
+    # ── Electron: proxy_e × electron count ───────────────────────
+    proxy_e   = make_electron_proxy(flux_e_rs)
+    is_e_spe  = spe_mask_from(proxy_e, E_SPE_PROXY_THRESH)
+    fig_e, rec_e = draw_scatter_grid(
+        cnt_e_rs, proxy_e, is_e_spe,
+        logics=COUNT_ELECTRON_LOGICS,
+        flux_label=E_SPE_PROXY_LABEL,
+        flux_unit="cm-2 sr-1 s-1  (dE integral)",
+        thresh=E_SPE_PROXY_THRESH)
+    out_e = OUTPUT_DIR / "ana1_count_flux_scatter_proxy_e.png"
+    fig_e.savefig(out_e, dpi=150, bbox_inches="tight")
+    plt.close(fig_e)
+    print(f"[ana1] Electron proxy 산점도 saved: {out_e}")
+    all_records.extend(rec_e)
+
+    # ── CSV (proton + electron 통합) ──────────────────────────────
     df_fit  = pd.DataFrame(all_records)
     out_csv = OUTPUT_DIR / "ana1_count_flux_fit.csv"
     df_fit.to_csv(out_csv, index=False, float_format="%.6g")

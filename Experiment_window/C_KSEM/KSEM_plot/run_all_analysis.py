@@ -17,6 +17,7 @@ SCRIPTS = {
     "3": ("ana3_noise_characterization", "Quiet noise characterization"),
     "4": ("ana4_count_response_profile", "Count response profile"),
     "5": ("ana5_electron_precursor",     "Electron precursor analysis"),
+    "6": ("ana6_count_rolling_spe",      "High-energy (OU/OUT) rolling-threshold SPE detection"),
 }
 
 def main():
