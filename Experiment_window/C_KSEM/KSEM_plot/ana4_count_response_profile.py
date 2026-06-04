@@ -447,32 +447,46 @@ def plot_pd_direction(df_count: pd.DataFrame,
     label  = "Electron" if suffix else "Proton"
     fig, axes = plt.subplots(nrows, ncols,
                               figsize=(5 * ncols, 3.5 * nrows), squeeze=False)
-    fig.suptitle(f"{label} PD Peak Count Ratio (A-side)\n"
-                 "ratio>1: numerator-direction dominant", fontsize=11)
+    fig.suptitle(f"{label} PD Peak Count Ratio (A vs B side)\n"
+                 "ratio>1: numerator-direction dominant | "
+                 "solid line=A median, dashed line=B median", fontsize=11)
+
+    # side별 색 (A/B 구분). 비율 자체는 같은 PD쌍이므로 색으로만 분리.
+    side_style = {
+        "A": {"color": "#9b59b6", "ls": "--"},   # 보라 (기존 A 색 유지)
+        "B": {"color": "#e67e22", "ls": ":"},     # 주황
+    }
 
     for ri, (pd0, pd1) in enumerate(pairs):
         for ci, logic in enumerate(logics):
             ax = axes[ri][ci]
-            ratios = []
-            for ev in events:
-                try:
-                    p0 = df_count[pd0, "A", logic].loc[ev.onset:ev.end].max()
-                    p1 = df_count[pd1, "A", logic].loc[ev.onset:ev.end].max()
-                except KeyError:
+
+            # A·B 각각의 비율 분포를 같은 축에 겹쳐 그린다.
+            for side in COUNT_SIDES:
+                ratios = []
+                for ev in events:
+                    try:
+                        p0 = df_count[pd0, side, logic].loc[ev.onset:ev.end].max()
+                        p1 = df_count[pd1, side, logic].loc[ev.onset:ev.end].max()
+                    except KeyError:
+                        continue
+                    if np.isfinite(p0) and np.isfinite(p1) and p1 > 0:
+                        ratios.append(p0 / p1)
+                if not ratios:
                     continue
-                if np.isfinite(p0) and np.isfinite(p1) and p1 > 0:
-                    ratios.append(p0 / p1)
-            if ratios:
                 med = float(np.median(ratios))
-                ax.hist(ratios, bins=10, color="#9b59b6",
-                        alpha=0.75, edgecolor="white")
-                ax.axvline(med, ls="--", color="black", lw=1.5,
-                           label=f"median={med:.2f}")
-                ax.legend(fontsize=8)
-            ax.axvline(1.0, ls=":", color="gray", lw=1)
+                st  = side_style.get(side, {"color": "#7f8c8d", "ls": "-"})
+                ax.hist(ratios, bins=10, color=st["color"],
+                        alpha=0.45, edgecolor="white",
+                        label=f"{side} (n={len(ratios)})")
+                ax.axvline(med, ls=st["ls"], color=st["color"], lw=1.8,
+                           label=f"{side} median={med:.2f}")
+
+            ax.axvline(1.0, ls="-", color="gray", lw=0.8, alpha=0.6)
             ax.set_xlabel(f"{pd0}/{pd1} Ratio", fontsize=9)
             ax.set_ylabel("N events", fontsize=9)
             ax.set_title(f"{pd0}/{pd1} | {logic}", fontsize=9)
+            ax.legend(fontsize=6)
             ax.grid(True, alpha=0.3)
 
     fig.tight_layout()
