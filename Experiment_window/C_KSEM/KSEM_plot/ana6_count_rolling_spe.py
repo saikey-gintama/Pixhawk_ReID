@@ -21,15 +21,18 @@ ana2와의 관계 (의도적으로 최대한 동일하게 유지):
       ana6  : count >= rolling 배경 × n      (이 파일 detect_events_rolling)
     rolling 배경 = compute_rolling_bg (직전 30일 중 조용한 7일, 일별 갱신).
 
-이번 단계 범위 (부가기능은 추후):
+이번 단계 범위:
   - OU/OUT 채널만, 각 PD·각 side 독립.
-  - 상승 기준: bg_median + k·σ (ksig). ana1~ana5에서 쓰던 임계 형태는 ana4의
-    median + k·σ 하나뿐이라 ana6도 동일 형태를 rolling으로 적용한다.
-    배경 median이 0에 수렴하는 OU/OUT에서는 배수(×n) 방식이 원리적으로
-    불가능(0×n=0)하므로 쓰지 않는다. k는 탐색을 위해 {10, 15, 20} 동시 산출.
-  - onset 유효성: 임계 초과가 MIN_SPE_DURATION_H(6h) 이상 연속.
-  - end 조건/hysteresis/PRE_ALERT/재무장 등 FSM 로직 없음. onset만.
-  - 이벤트별 ±PANEL_WINDOW_H 패널 (ana2식). 폭주 시 패널 스킵 가드.
+  - 상승 기준: bg_median + k·σ_robust (MAD 기반, ksem_common). σ가 MAD라
+    OU/OUT(quiet 과반이 0)에서는 σ≈0 → 임계가 ONSET_FLOOR에 수렴한다.
+    k는 탐색을 위해 {10, 15, 20} 동시 산출(단 σ≈0이라 k 민감도는 낮음).
+  - 이중 문턱:
+      ONSET_FLOOR : onset/end 구간 경계(낮게). 상승 시작을 일찍 잡고
+                    본체를 끝까지 유지 → onset 지연·본체 절단 방지.
+      PEAK_FLOOR  : 이벤트 인정 사후 필터. 구간 peak<PEAK_FLOOR이면 노이즈로 버림.
+  - onset 유효성: 임계 초과가 MIN_SPE_DURATION_H 이상 연속(현재 1h).
+  - end 조건/hysteresis/PRE_ALERT/재무장 등 FSM 로직 없음(FSM 브랜치에서).
+  - 이벤트별 ±PANEL_WINDOW_H 패널. 폭주 시 패널 스킵 가드.
 
 출력:
   ana_output/panels_he_<crit>_<PD><side>_<logic>/ana6_event_XX_panel.png
@@ -74,12 +77,21 @@ BG_UPDATE_FREQ       = "1D"             # rolling 배경 갱신 주기
 PANEL_WINDOW_H       = 24               # 패널 onset 전후 ±시간
 MAX_PANELS_PER_CHAN  = 150              # 채널당 패널 상한(폭주 가드)
 
-# ── 절대 최소 count floor ─────────────────────────────────────────
-# OU/OUT은 count가 0~1 범위라 median+kσ가 1 미만에 갇혀, 입자 1개 요동을
-# 이벤트로 오탐한다(peak 0.7짜리 가짜 검출). 통계 임계와 무관하게 peak가
-# 이 값 미만이면 이벤트로 인정하지 않는다. threshold = max(median+kσ, FLOOR).
-# 0이면 floor 비활성(기존 동작).
-MIN_ABS_COUNT_FLOOR  = 2.0
+# ── 이중 문턱: onset/end 경계 floor + 이벤트 인정 peak floor ──────
+# 기존엔 floor 하나(MIN_ABS_COUNT_FLOOR)가 onset/end 판정에 직접 걸려,
+# (1) onset이 floor를 넘어야 시작 → 상승 초반을 놓쳐 onset 지연
+# (2) floor 아래로 한 번만 떨어져도 end → 본체 절단
+# 문제가 있었다. MAD 도입 후 OU/OUT은 median+kσ≈0이라 floor가 검출을
+# 100% 지배하므로 이 문제가 더 두드러진다.
+#
+# → 두 문턱으로 분리한다:
+#   ONSET_FLOOR : onset/end 구간 경계. 낮게 둬서 상승 시작을 일찍 잡고
+#                 본체를 끝까지 유지한다. threshold_onset = max(med+kσ, ONSET_FLOOR).
+#   PEAK_FLOOR  : 이벤트 인정 문턱(사후 필터). 구간 peak_count가 이 값
+#                 미만이면 노이즈로 보고 버린다. onset/end엔 관여하지 않는다.
+# (GOES 방식과 동일: 낮은 경계로 구간을 잡고, 높은 문턱으로 이벤트를 판정.)
+ONSET_FLOOR  = 0.5   # onset/end 구간 경계 floor
+PEAK_FLOOR   = 3.0   # 이벤트 인정 최소 peak_count (사후 필터)
 
 # ── 출력 부모 폴더 (패널 폴더들을 한 곳에 모음) ───────────────────
 ANA6_OUTPUT_DIR = OUTPUT_DIR / "ana6_output"
@@ -95,10 +107,16 @@ assert set(HE_LOGICS) <= set(COUNT_PROTON_LOGICS), "HE_LOGICS must be proton log
 def detect_events_rolling(cnt: pd.Series,
                           thresh_series: pd.Series,
                           min_duration_h: float,
+                          peak_floor: float = 0.0,
                           label: str = "HE_SPE") -> list[SPEEvent]:
     """
     count >= 시점별 rolling 임계(thresh_series) 가 min_duration_h 이상 연속인
-    구간을 SPEEvent로 반환.
+    구간을 SPEEvent로 반환. 단, 구간 peak_count < peak_floor 인 이벤트는
+    노이즈로 보고 제외한다(이중 문턱의 사후 필터).
+
+    thresh_series는 onset/end 경계용(ONSET_FLOOR 반영)이고, peak_floor는
+    이벤트 인정용으로 별개다. 둘을 분리해 onset 지연/본체 절단 없이
+    노이즈만 거른다.
 
     ksem_common.detect_events와 연속구간 묶기 로직은 동일하나, thresh가 스칼라가
     아닌 시계열이라는 점만 다르다(공유함수를 건드리지 않기 위해 별도 구현).
@@ -114,23 +132,28 @@ def detect_events_rolling(cnt: pd.Series,
     in_ev = False
     onset = None
 
+    def _maybe_append(seg, onset_t, end_t):
+        """구간을 peak_floor로 필터링 후 이벤트 추가."""
+        if (end_t - onset_t).total_seconds() / 3600 < min_duration_h:
+            return
+        pk = float(seg.max())
+        if pk < peak_floor:          # 이중 문턱: peak가 낮으면 노이즈로 버림
+            return
+        events.append(SPEEvent(onset_t, seg.idxmax(), end_t, pk))
+
     for t, is_above in above.items():
         if is_above and not in_ev:
             in_ev, onset = True, t
         elif not is_above and in_ev:
-            seg = cnt.loc[onset:t]
-            dur_h = (t - onset).total_seconds() / 3600
-            if dur_h >= min_duration_h:
-                events.append(SPEEvent(onset, seg.idxmax(), t, float(seg.max())))
+            _maybe_append(cnt.loc[onset:t], onset, t)
             in_ev = False
 
     if in_ev and onset is not None:
         seg = cnt.loc[onset:]
-        if (seg.index[-1] - onset).total_seconds() / 3600 >= min_duration_h:
-            events.append(SPEEvent(onset, seg.idxmax(),
-                                   seg.index[-1], float(seg.max())))
+        _maybe_append(seg, onset, seg.index[-1])
 
-    print(f"  [ana6] {label} events: {len(events)}  (min {min_duration_h}h)")
+    print(f"  [ana6] {label} events: {len(events)}  "
+          f"(min {min_duration_h}h, peak>={peak_floor})")
     return events
 
 
@@ -148,8 +171,8 @@ def build_threshold_series(cnt: pd.Series) -> dict[str, pd.Series]:
     out: dict[str, pd.Series] = {}
     for k in KSIG_K_SWEEP:
         th = med + k * std
-        if MIN_ABS_COUNT_FLOOR > 0:
-            th = th.clip(lower=MIN_ABS_COUNT_FLOOR)   # 절대 최소 count floor
+        if ONSET_FLOOR > 0:
+            th = th.clip(lower=ONSET_FLOOR)   # onset/end 경계 floor (낮게)
         out[f"ksig{k}"] = th.rename(f"ksig{k}")
     return out
 
@@ -238,6 +261,7 @@ def main():
                 for crit, thr in thr_dict.items():
                     evs = detect_events_rolling(
                         cnt, thr, MIN_SPE_DURATION_H,
+                        peak_floor=PEAK_FLOOR,
                         label=f"{pd_key}{side}_{logic}_{crit}")
 
                     summary_rows.append({
