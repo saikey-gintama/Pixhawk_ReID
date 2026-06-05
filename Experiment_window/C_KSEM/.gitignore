@@ -1,6 +1,5 @@
 __pycache__/
-output*/
-ana_output/
+*output*/
 
 # 대용량 데이터/캐시
 *_cache_parquet/

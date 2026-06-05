@@ -146,6 +146,30 @@ def detect_electron_events(proxy_e: pd.Series) -> list[SPEEvent]:
 
 
 # ── 배경 추정 (Löwe et al. 2025) ──────────────────────────────────
+def _robust_sigma(x: pd.Series | np.ndarray) -> float:
+    """
+    MAD(median absolute deviation) 기반 강건 표준편차 추정.
+        sigma_robust = 1.4826 * median(|x - median(x)|)
+    (1.4826은 정규분포에서 MAD를 σ로 환산하는 상수.)
+
+    실측 std(ddof=1) 대신 쓰는 이유:
+      OU/OUT처럼 평소 0~1인 저카운트 채널의 quiet 표본에 거대 스파이크가
+      단 하나라도 섞이면 std가 폭발한다(예: 스파이크 1개에 std 0.5→200,
+      threshold = median+10σ 가 2000까지 치솟아 그 기간 검출 불능).
+      MAD는 표본의 절반 이상이 오염되지 않는 한 이상치에 영향받지 않으므로
+      threshold가 안정적으로 유지된다.
+
+    주의: 표본의 과반이 동일값(0 등)이면 MAD=0이 될 수 있다. 그 경우
+    호출부는 floor(절대 최소 임계값)에 의존하게 되며, 이는 의도된 동작이다.
+    """
+    x = np.asarray(x, dtype=float)
+    x = x[np.isfinite(x)]
+    if len(x) < 2:
+        return np.nan
+    med = np.median(x)
+    return float(1.4826 * np.median(np.abs(x - med)))
+
+
 def _select_quiet_samples(cnt: pd.Series,
                           onset: pd.Timestamp,
                           bg_window_days: int,
@@ -197,29 +221,30 @@ def get_bg_threshold(cnt: pd.Series,
                      bg_quiet_days: int,
                      k: float) -> float:
     """
-    Count onset 임계값 = bg_median + k · σ_quiet.
+    Count onset 임계값 = bg_median + k · σ_quiet (robust).
 
     onset 이전 가장 조용한 bg_quiet_days일의 원본 count로 배경 통계를 추정하고,
-    median에 실측 표준편차(ddof=1)의 k배를 더한 값을 임계값으로 반환한다.
+    median에 MAD 기반 강건 σ(_robust_sigma)의 k배를 더한 값을 임계값으로 반환한다.
 
-    산포항으로 √median(Poisson)이 아니라 실측 σ를 쓰는 이유:
+    산포항으로 √median(Poisson)도, 실측 std도 아니라 MAD 기반 강건 σ를 쓰는 이유:
       KSEM count는 강한 과분산(ana3 Index of Dispersion ≫ 1, OU/OUT은 7만~21만).
-      Poisson 가정은 분산을 median으로 과소평가해 임계값이 배경 수준까지 내려가고,
-      이전 p70 방식이 OU/OUT(quiet median<1)에서 단일 카운트를 onset으로
-      오검출한 것과 같은 문제를 일으킨다. 실측 σ는 채널 고유의 노이즈 폭을
-      그대로 반영한다.
+      Poisson 가정(√median)은 분산을 과소평가해 임계값이 배경까지 내려가고,
+      실측 std는 반대로 quiet 표본에 스파이크가 하나만 껴도 폭발해 임계값이
+      수백~수천이 되어 그 기간 검출이 불가능해진다(OUT threshold 800 폭주).
+      MAD 기반 σ는 둘 다 피한다: 채널 고유 노이즈 폭은 반영하되 단발 이상치엔
+      강건하다.
 
     주의:
-      배경 자체가 0에 가까운 저카운트 채널(OU/OUT 등)은 bg+kσ도 매우 작은
-      정수가 될 수 있다. floor(절대 최소 임계값) 또는 트리거 채널 제외 여부는
-      이 함수 결과를 본 뒤 별도로 결정한다(현재는 bg+kσ만 적용).
+      배경이 0에 수렴하는 저카운트 채널(OU/OUT)은 MAD=0이 되어 bg+kσ=median이
+      될 수 있다. 이 경우 검출은 floor(절대 최소 임계값)에 의존하며, 이는
+      의도된 동작이다. floor는 이 함수 밖(호출부)에서 적용한다.
 
     데이터 부족 시 np.nan.
     """
     q = _select_quiet_samples(cnt, onset, bg_window_days, bg_quiet_days)
     if len(q) < 2:
         return np.nan
-    return float(q.median() + k * q.std(ddof=1))
+    return float(q.median() + k * _robust_sigma(q))
 
 
 def compute_rolling_bg(cnt: pd.Series,
@@ -238,6 +263,7 @@ def compute_rolling_bg(cnt: pd.Series,
       동일한 _select_quiet_samples를 재사용 → 단일 시점 함수와 정의가 일치.
 
     반환: DataFrame(index=cnt.index, columns=["bg_median", "bg_std"])
+      bg_std는 MAD 기반 강건 σ(_robust_sigma). get_bg_threshold와 동일.
       갱신 불가(데이터 부족) 구간은 NaN → 호출부에서 검출 제외.
     """
     if cnt.empty:
@@ -248,7 +274,7 @@ def compute_rolling_bg(cnt: pd.Series,
     for t in update_points:
         q = _select_quiet_samples(cnt, t, bg_window_days, bg_quiet_days)
         if len(q) >= 2:
-            rows.append((t, float(q.median()), float(q.std(ddof=1))))
+            rows.append((t, float(q.median()), _robust_sigma(q)))
         elif len(q) == 1:
             rows.append((t, float(q.median()), np.nan))
         else:
