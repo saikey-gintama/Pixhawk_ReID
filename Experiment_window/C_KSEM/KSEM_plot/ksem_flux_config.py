@@ -92,8 +92,8 @@ COUNT_SIDES           = ["A", "B"]
 
 # ── 이벤트 탐지 공통 조건 ─────────────────────────────────────────
 # proxy >= THRESH 가 이 시간 이상 연속되어야 이벤트로 인정
-MIN_SPE_DURATION_H    = 6    # [h] proton SPE (ana2·ana4 공유)
-MIN_E_SPE_DURATION_H  = 6    # [h] electron E_SPE (ana2·ana4·ana5 공유), 초기값 동일
+MIN_SPE_DURATION_H    = 1    # [h] proton SPE (ana2·ana4 공유)
+MIN_E_SPE_DURATION_H  = 1    # [h] electron E_SPE (ana2·ana4·ana5 공유), 초기값 동일
 
 # ── 배경(quiet) 추정 공통 파라미터 (Löwe et al. 2025) ─────────────
 # onset 이전 BG_WINDOW_DAYS 슬라이딩 윈도우 중 가장 조용한 BG_QUIET_DAYS일을
