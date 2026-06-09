@@ -45,6 +45,19 @@ import matplotlib.dates as mdates
 
 import noaa_goes_spe_io as spe_io
 
+
+
+def _name_stem_from_events(events_path):
+    """입력 CSV 파일명에서 fsm_event_/fsm_onset_ 접두만 떼고 나머지 전체를 반환.
+    예) fsm_event_quietoff_mad_w30_k10_on0.5_pk2.csv
+        -> 'quietoff_mad_w30_k10_on0.5_pk2'
+    접두가 없으면 확장자만 뗀 stem 그대로."""
+    import re
+    stem = Path(events_path).stem
+    m = re.match(r"fsm_(?:event|onset)_(.+)", stem)
+    return m.group(1) if m else stem
+
+
 # ── 매칭 파라미터 ─────────────────────────────────────────────────
 MATCH_TOL_H   = 24.0                       # NOAA begin ±시간 매칭 허용오차
 KSEM_ERA      = ("2019-01-01", "2024-12-31")
@@ -210,6 +223,105 @@ def _load_count(parquet_path: Path) -> pd.Series:
     return cnt.resample("15min").mean().dropna()
 
 
+
+
+def plot_pod_far_scatter(tbl, title, out_path):
+    """채널별 POD vs FAR scatter. x=FAR y=POD.
+    그룹: A=OU/OUT(파랑, 탐지적합), B=FTU/FTUO(주황, 중간),
+          C=O/F/FT/CR(회색, 부적합). std/MAD 기반 3그룹.
+    PD1A-OU 는 noise outlier 로 반투명 별 표시.
+    옆 패널에 onset_diff 박스플롯(그룹별)."""
+
+    def _group(logic):
+        if logic in ("OU", "OUT"):            return "A"
+        if logic in ("FTU", "FTUO"):          return "B"
+        return "C"                            # O, F, FT, CR
+    COLORS = {"A": "#2c6fbb", "B": "#e67e22", "C": "#95a5a6"}
+    LABELS = {"A": "A: OU/OUT  (quiet bg, detection-suitable)",
+              "B": "B: FTU/FTUO  (intermediate)",
+              "C": "C: O/F/FT/CR  (active bg, unsuitable)"}
+
+    df = tbl.copy()
+    if "logic" not in df.columns:
+        df["logic"] = df["channel"].str.split("-").str[-1]
+    df["grp"] = df["logic"].map(_group)
+
+    fig, (ax, axb) = plt.subplots(1, 2, figsize=(11, 5.2),
+                                  gridspec_kw={"width_ratios": [3, 1.4]})
+
+    # ── scatter (회색 먼저, 파랑 위로) ──
+    for g in ["C", "B", "A"]:
+        sub = df[df["grp"] == g]
+        ax.scatter(sub["FAR"], sub["POD"], s=70, c=COLORS[g],
+                   edgecolor="white", linewidth=0.6, alpha=0.85,
+                   label=LABELS[g], zorder=3)
+
+    # ── PD1A-OU outlier: 반투명·축소 별 (뒤 파랑 점 보이게) ──
+    out = df[df["channel"] == "PD1A-OU"]
+    if len(out):
+        ax.scatter(out["FAR"], out["POD"], s=180, marker="*",
+                   facecolor="none", edgecolor="black", linewidth=1.3,
+                   alpha=0.9, zorder=6, label="PD1A-OU (noise outlier)")
+
+    # ── 채널명 라벨: A·B 그룹만 ──
+    # adjustText 가 있으면 자동 분산(겹침 회피), 없으면 위아래 번갈아 폴백.
+    lab_df = df[df["grp"].isin(["A", "B"])].sort_values("POD", ascending=False)
+    try:
+        from adjustText import adjust_text
+        texts = [ax.text(r["FAR"], r["POD"], r["channel"], fontsize=6.5, zorder=7)
+                 for _, r in lab_df.iterrows()]
+        adjust_text(
+            texts, ax=ax,
+            expand=(1.3, 1.6),
+            arrowprops=dict(arrowstyle="-", color="gray", lw=0.4, alpha=0.6))
+    except ImportError:
+        for i, (_, r) in enumerate(lab_df.iterrows()):
+            dy = 12 if (i % 2 == 0) else -14
+            ax.annotate(
+                r["channel"], (r["FAR"], r["POD"]),
+                fontsize=6.5, xytext=(6, dy), textcoords="offset points",
+                ha="left", va="center", zorder=7,
+                arrowprops=dict(arrowstyle="-", color="gray",
+                                lw=0.4, alpha=0.6, shrinkA=0, shrinkB=2))
+
+    ax.set_xlabel("FAR (false alarm rate)", fontsize=10)
+    ax.set_ylabel("POD (probability of detection)", fontsize=10)
+    ax.set_xlim(-0.05, 1.08); ax.set_ylim(-0.05, 1.08)
+    ax.axhline(0.5, ls=":", color="gray", lw=0.7, alpha=0.6)
+    ax.axvline(0.5, ls=":", color="gray", lw=0.7, alpha=0.6)
+    ax.text(0.02, 0.99, "ideal", fontsize=8, color="green",
+            alpha=0.7, va="top")
+    ax.legend(fontsize=7, loc="best", framealpha=0.92)
+    ax.set_title(title, fontsize=11)
+    ax.grid(True, alpha=0.25)
+
+    # ── 우: onset_diff 박스플롯 (그룹별) ──
+    diff_col = "onset_diff_med_h"
+    if diff_col in df.columns:
+        data, labels, colors = [], [], []
+        for g in ["A", "B", "C"]:
+            vals = df[df["grp"] == g][diff_col].dropna().values
+            if len(vals):
+                data.append(vals); labels.append(g); colors.append(COLORS[g])
+        if data:
+            bp = axb.boxplot(data, tick_labels=labels, patch_artist=True,
+                             widths=0.6, showfliers=False)
+            for patch, c in zip(bp["boxes"], colors):
+                patch.set_facecolor(c); patch.set_alpha(0.6)
+            axb.axhline(0, ls="--", color="black", lw=0.8, alpha=0.6)
+            axb.set_ylabel("onset_diff [h]\n(neg = KSEM leads)", fontsize=8)
+            axb.set_xlabel("channel group", fontsize=9)
+            axb.set_title("onset_diff", fontsize=10)
+            axb.grid(True, alpha=0.25, axis="y")
+    else:
+        axb.axis("off")
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[match] scatter saved -> {out_path}")
+
+
 def main():
     ap = argparse.ArgumentParser(description="검출 이벤트 ↔ NOAA SPE 매칭/시각화")
     ap.add_argument("--events", required=True, help="검출 이벤트 CSV (ana6_sweep_event.csv)")
@@ -226,24 +338,29 @@ def main():
                     help="전 채널 일괄: count parquet들이 든 폴더 (채널명→PD_S_LOGIC.parquet 매핑)")
     args = ap.parse_args()
 
-    combo = f"k{args.k}_on{args.onset}_pk{args.peak}"
-    # 출력 폴더에 조합명 부여 → 실행마다 분리 (summary·그림 안 섞임)
-    outdir = Path(args.out) / combo
+    # 출력 폴더/파일명을 입력 CSV 파일명 그대로 따라감 (덮어쓰기 방지)
+    name = _name_stem_from_events(args.events)   # 예: quietoff_mad_w30_k10_on0.5_pk2
+    outdir = Path(args.out) / name
     outdir.mkdir(parents=True, exist_ok=True)
 
     # 1) 전 조합 POD/FAR 표 (27조합 전체 — 조합 무관하게 항상 동일)
     tbl = sweep_table(Path(args.events), Path(args.catalog), args.tol)
-    tbl.to_csv(outdir / "noaa_match_summary_all.csv", index=False)
+    tbl.to_csv(outdir / f"noaa_match_summary_all_{name}.csv", index=False)
     print(f"[match] summary (all combos) saved → "
-          f"{outdir/'noaa_match_summary_all.csv'}  ({len(tbl)} rows)")
+          f"{outdir}/noaa_match_summary_all_{name}.csv  ({len(tbl)} rows)")
 
     # FINAL 조합만 추린 채널별 표 (별도 저장 + 콘솔)
     fin = tbl[(tbl.k == args.k) & (tbl.onset_floor == args.onset)
               & (tbl.peak_floor == args.peak)].sort_values("POD", ascending=False)
-    fin.to_csv(outdir / f"noaa_match_{combo}.csv", index=False)
-    print(f"[match] FINAL combo ({combo}) saved → "
-          f"{outdir/('noaa_match_'+combo+'.csv')}")
+    fin.to_csv(outdir / f"noaa_match_{name}.csv", index=False)
+    print(f"[match] FINAL ({name}) saved -> "
+          f"{outdir}/noaa_match_{name}.csv")
     print(fin.to_string(index=False))
+
+    # scatter figure (Figure for paper)
+    plot_pod_far_scatter(
+        fin, f"NOAA match  {name}",
+        outdir / f"fig_noaa_scatter_{name}.png")
 
     # 2) 겹쳐그리기
     ev = pd.read_csv(args.events)
@@ -255,8 +372,8 @@ def main():
                  & (ev.onset_floor == args.onset) & (ev.peak_floor == args.peak)]
         cnt = _load_count(parquet_path)
         plot_overlay(cnt, noaa, det,
-                     f"{channel}  {combo}",
-                     outdir / f"overlay_{channel}_{combo}.png", args.tol)
+                     f"{channel}  {name}",
+                     outdir / f"overlay_{channel}_{name}.png", args.tol)
 
     if args.count_dir:
         # 전 채널 일괄: CSV에 등장하는 모든 채널에 대해 parquet 찾아 그림
