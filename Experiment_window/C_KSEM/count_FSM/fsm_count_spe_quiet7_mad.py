@@ -24,6 +24,7 @@ Count 단독 SPE onset 탐지 — 전 채널 일괄, 단일 방식 고정판 (qu
 
 from __future__ import annotations
 import sys
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -59,6 +60,38 @@ K           = 10
 ONSET_FLOOR = 0.5
 PEAK_FLOOR  = 2.0
 MIN_PTS_PER_CHANNEL = 100
+
+
+def parse_args():
+    """파라미터만 argument로 받는다. 미지정 시 위 기본값 사용.
+    출력 폴더/파일명은 TAG + 이 값들에서 자동 생성되므로 직접 지정 불필요."""
+    p = argparse.ArgumentParser(
+        description=f"FSM count SPE detector [{TAG}] — params override defaults, "
+                    f"output names auto-built from TAG+params.")
+    p.add_argument("--window", type=int,   default=BG_WINDOW_DAYS,
+                   help=f"background sliding window [day] (default {BG_WINDOW_DAYS})")
+    p.add_argument("--k",      type=float, default=K,
+                   help=f"threshold multiplier median+k*sigma (default {K})")
+    p.add_argument("--onset",  type=float, default=ONSET_FLOOR,
+                   help=f"onset floor, threshold lower clip (default {ONSET_FLOOR})")
+    p.add_argument("--peak",   type=float, default=PEAK_FLOOR,
+                   help=f"peak floor, post-filter (default {PEAK_FLOOR})")
+    p.add_argument("--quiet-days", type=int, default=(BG_QUIET_DAYS if BG_QUIET_DAYS else 0),
+                   help="quiet-day selection N; 0 = use whole window "
+                        f"(default {BG_QUIET_DAYS if BG_QUIET_DAYS else 0})")
+    return p.parse_args()
+
+
+def build_runtag(tag, window, k, onset, peak):
+    """출력 파일명용 파라미터 문자열. 예: quietoff_mad_w30_k10_on0.5_pk2.0"""
+    return f"{tag}_w{window}_k{_numstr(k)}_on{_numstr(onset)}_pk{_numstr(peak)}"  # see _numstr
+
+
+def _numstr(v):
+    """10.0 -> '10', 0.5 -> '0.5' (파일명 깔끔하게)."""
+    f = float(v)
+    return str(int(f)) if f.is_integer() else str(f)
+
 
 FSM_OUTPUT_DIR = _THIS_DIR / "fsm_output"
 FSM_OUTPUT_DIR.mkdir(exist_ok=True)
@@ -170,6 +203,19 @@ def load_count() -> pd.DataFrame:
 
 
 def main():
+    args = parse_args()
+    window   = args.window
+    k        = args.k
+    onset_fl = args.onset
+    peak_fl  = args.peak
+    quiet_d  = args.quiet_days if args.quiet_days > 0 else None
+    runtag   = build_runtag(TAG, window, k, onset_fl, peak_fl)
+    out_dir  = FSM_OUTPUT_DIR / runtag
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"[fsm:{TAG}] params: window={window}d k={k} onset={onset_fl} "
+          f"peak={peak_fl} quiet_days={quiet_d}")
+    print(f"[fsm:{TAG}] runtag: {runtag}")
     print(f"[fsm:{TAG}] Loading count data...")
     df_count = load_count()
     cnt_rs = df_count.resample(RESAMPLE_FREQ).mean()
@@ -186,17 +232,17 @@ def main():
                     continue
                 chan = f"{pd_key}{side}-{logic}"
                 print(f"\n[fsm:{TAG}] {chan}  (n={len(cnt)} pts)")
-                bg   = compute_rolling_bg(cnt, BG_WINDOW_DAYS, BG_QUIET_DAYS, BG_UPDATE_FREQ)
-                thr  = build_threshold(bg, K, ONSET_FLOOR)
+                bg   = compute_rolling_bg(cnt, window, quiet_d, BG_UPDATE_FREQ)
+                thr  = build_threshold(bg, k, onset_fl)
                 segs = detect_segments(cnt, thr, bg, MIN_SPE_DURATION_H)
-                base = {"k": K, "onset_floor": ONSET_FLOOR, "pd_key": pd_key,
+                base = {"k": k, "onset_floor": onset_fl, "pd_key": pd_key,
                         "side": side, "logic": logic, "channel": chan}
                 for s in segs:
                     onset_rows.append({**base, **s})
-                passed = [s for s in segs if s["peak_count"] >= PEAK_FLOOR]
+                passed = [s for s in segs if s["peak_count"] >= peak_fl]
                 for s in passed:
-                    event_rows.append({**base, "peak_floor": PEAK_FLOOR, **s})
-                print(f"    segs={len(segs)}  peak>={PEAK_FLOOR}: {len(passed)}")
+                    event_rows.append({**base, "peak_floor": peak_fl, **s})
+                print(f"    segs={len(segs)}  peak>={peak_fl}: {len(passed)}")
 
     ONSET_COLS = ["k","onset_floor","pd_key","side","logic","channel",
                   "onset_time","peak_time","end_time","onset_count","peak_count",
@@ -206,14 +252,14 @@ def main():
                   "end_count","duration_h","bg_median","bg_sigma","threshold"]
     df_on = pd.DataFrame(onset_rows, columns=ONSET_COLS)
     df_ev = pd.DataFrame(event_rows, columns=EVENT_COLS)
-    out_on = FSM_OUTPUT_DIR / f"fsm_onset_{TAG}.csv"
-    out_ev = FSM_OUTPUT_DIR / f"fsm_event_{TAG}.csv"
+    out_on = out_dir / f"fsm_onset_{runtag}.csv"
+    out_ev = out_dir / f"fsm_event_{runtag}.csv"
     df_on.to_csv(out_on, index=False)
     df_ev.to_csv(out_ev, index=False)
     print(f"\n[fsm:{TAG}] onset saved: {out_on}  ({len(df_on)} rows)")
     print(f"[fsm:{TAG}] event saved: {out_ev}  ({len(df_ev)} rows)")
-    print(f"[fsm:{TAG}] BG_QUIET_DAYS={BG_QUIET_DAYS} SIGMA_METHOD={SIGMA_METHOD} "
-          f"WINDOW={BG_WINDOW_DAYS}d K={K} floor={ONSET_FLOOR} peak={PEAK_FLOOR}")
+    print(f"[fsm:{TAG}] quiet_days={quiet_d} SIGMA_METHOD={SIGMA_METHOD} "
+          f"WINDOW={window}d K={k} floor={onset_fl} peak={peak_fl}")
     if not df_on.empty:
         n_on = df_on.groupby("channel").size().rename("n_onset")
         n_ev = (df_ev.groupby("channel").size().rename("n_event")
