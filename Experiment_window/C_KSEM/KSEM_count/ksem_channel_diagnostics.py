@@ -23,8 +23,8 @@ MAD vs std는 배경 산포 추정의 두 방식이다(FSM에서 비교 대상):
   std = 표본 표준편차, 스파이크에 폭발.
 
 출력:
-  diag_output/channel_diag/channel_diagnostics.csv   전 채널 지표표
-  diag_output/channel_diag/profile_{channel}.png     채널별 hour·월 프로파일 + 분포
+  diag_output/channel_diagnostics.csv   전 채널 지표표
+  diag_output/profile_{channel}.png     채널별 hour·월 프로파일 + 분포
 
 자립형: ksem_io만 의존. 경로는 상단에서 조정.
 """
@@ -55,7 +55,7 @@ PD_KEYS       = ["PD1", "PD2", "PD3"]
 SIDES         = ["A", "B"]
 MIN_PTS       = 100
 
-OUT_DIR = _THIS_DIR / "diag_output" / "channel_diag"
+OUT_DIR = _THIS_DIR / "diag_output"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
