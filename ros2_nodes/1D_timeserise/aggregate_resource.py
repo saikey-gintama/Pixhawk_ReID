@@ -65,7 +65,7 @@ def parse_run(folder: str) -> dict | None:
     if not os.path.exists(log):
         return None
     name = os.path.basename(folder.rstrip("/"))
-    m = re.search(r"(W\d+_[\d-]+)_W(\d+)_rep(\d+)", name)
+    m = re.search(r"(E\d+_[\d-]+)_W(\d+)_rep(\d+)", name)
     label = m.group(1) if m else name
     wd = int(m.group(2)) if m else -1
     rep = int(m.group(3)) if m else 1
