@@ -266,8 +266,12 @@ class FsmNode(Node):
 
         # ── persistence (LC_SampleSingleAP 이식) ──
         if rpn_result == RPN_TRIGGERED:
-            self.consecutive_fail += 1
-            self.cumulative_fail  += 1
+            # ALERT 도달 후엔 consecutive_fail 을 N 에 고정(clamp).
+            # active 는 latch 로, dry-run 은 여기서 — 둘 다 fail_count 가 N 을
+            # 넘지 않게 해 HK 로그 해석을 일관되게 한다. 판정(>=N)엔 영향 없음.
+            if self.ap_state != STATE_ALERT:
+                self.consecutive_fail += 1
+            self.cumulative_fail += 1   # 통계용 누적은 그대로
 
             if self.consecutive_fail >= PERSISTENCE_N:
                 # 발동 조건 충족
