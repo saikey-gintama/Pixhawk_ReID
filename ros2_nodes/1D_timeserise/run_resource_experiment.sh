@@ -16,8 +16,8 @@ set -euo pipefail
 
 # ── 경로 (git pull 후 동일 가정) ──
 REPO="${REPO:-$HOME/jeongin/Pixhawk_ReID}"
-NODE_DIR="${NODE_DIR:-$REPO/Experiment_window/C_KSEM/ros2_nodes}"
-DATA="${DATA:-$REPO/Experiment_window/C_KSEM/ksem_cache_parquet}"
+NODE_DIR="${NODE_DIR:-$REPO/ros2_nodes/1D_timeserise}"
+DATA="${DATA:-$REPO/Experiment_window/C_KSEM/KSEM_count/ksem_cache_parquet}"
 RESULTS_ROOT="${RESULTS_ROOT:-$REPO/results}"
 
 # ── 배속 ──
@@ -38,6 +38,15 @@ WINDOWS=(
 CONFIGS=(30 7)          # BG_WINDOW_DAYS
 REP_WINDOW="W3_2023-07" # 추가 rep 을 둘 윈도우
 REP_EXTRA=2             # 추가 rep 수 (기본 1 + 2 = 총 3 rep)
+
+# ── 스모크/부분 실행 필터 (환경변수로 제어) ──
+#   ONLY_WINDOW: 라벨 접두어로 한 윈도우만. 예) ONLY_WINDOW=W3  → W3_2023-07 만
+#   ONLY_CONFIG: 한 설정만. 예) ONLY_CONFIG=30  → W30 만
+#   둘 다 비우면 전체 14 run.
+#   필터가 걸리면 추가 rep 도 끄고 각 (윈도우×설정) 1 run 만 (스모크용).
+#   사용 예 (W3/W30 스모크):  ONLY_WINDOW=W3 ONLY_CONFIG=30 bash run_resource_experiment.sh
+ONLY_WINDOW="${ONLY_WINDOW:-}"
+ONLY_CONFIG="${ONLY_CONFIG:-}"
 
 # ── 한 run 실행 함수 ──
 # args: label start event end window_days rep
@@ -104,13 +113,27 @@ echo "results=$RESULTS_ROOT"
 echo "configs=W${CONFIGS[*]}  warmup=x$WARMUP_SPEED active=x$ACTIVE_SPEED"
 echo
 
+# 필터 상태 표시
+if [[ -n "$ONLY_WINDOW" || -n "$ONLY_CONFIG" ]]; then
+  echo "FILTER: ONLY_WINDOW='${ONLY_WINDOW:-(all)}'  ONLY_CONFIG='${ONLY_CONFIG:-(all)}'  (추가 rep 비활성 — 스모크 모드)"
+  echo
+fi
+
 # 기본 14 run: 각 윈도우 × 2 설정 × rep1
 for wd in "${CONFIGS[@]}"; do
+  # 설정 필터
+  if [[ -n "$ONLY_CONFIG" && "$wd" != "$ONLY_CONFIG" ]]; then
+    continue
+  fi
   for w in "${WINDOWS[@]}"; do
     read -r label start event end <<< "$w"
+    # 윈도우 필터 (접두어 매칭: W3 → W3_2023-07)
+    if [[ -n "$ONLY_WINDOW" && "$label" != "$ONLY_WINDOW"* ]]; then
+      continue
+    fi
     run_one "$label" "$start" "$event" "$end" "$wd" 1
-    # W3 추가 rep
-    if [[ "$label" == "$REP_WINDOW" ]]; then
+    # W3 추가 rep — 단, 필터(스모크) 중엔 건너뜀
+    if [[ -z "$ONLY_WINDOW" && -z "$ONLY_CONFIG" && "$label" == "$REP_WINDOW" ]]; then
       for ((r=2; r<=REP_EXTRA+1; r++)); do
         run_one "$label" "$start" "$event" "$end" "$wd" "$r"
       done
