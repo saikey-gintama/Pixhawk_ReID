@@ -60,9 +60,9 @@ def _import_event_io(io_arg: str, catalog_dir: str):
 
 
 def _name_stem_from_events(events_path) -> str:
-    """fsm_event_<tag>.csv → <tag>."""
+    """fsm_event_<tag>.csv / fsm_onset_<tag>.csv → <tag>."""
     stem = Path(events_path).stem
-    m = re.match(r"fsm_event_(.+)", stem)
+    m = re.match(r"fsm_(?:event|onset)_(.+)", stem)
     return m.group(1) if m else stem
 
 
@@ -122,9 +122,21 @@ def match_events(det: pd.DataFrame, cat: pd.DataFrame, tol_h: float = MATCH_TOL_
 def sweep_table(events_csv: Path, cat: pd.DataFrame, tol_h: float = MATCH_TOL_H) -> pd.DataFrame:
     """모든 (channel×k×onset×peak) 조합 POD/FAR 표."""
     ev = pd.read_csv(events_csv)
+    # peak_floor 컬럼이 없으면(=onset CSV, peak 사후필터 미적용) NaN으로 채워
+    # "peak 필터 없음" 모드로 동작. FAR 분모(n_det)가 onset 전량이 된다.
+    has_peak = "peak_floor" in ev.columns
+    if not has_peak:
+        ev = ev.copy()
+        ev["peak_floor"] = np.nan
     rows = []
     keys = ["channel", "k", "onset_floor", "peak_floor"]
-    for (ch, k, onf, pkf), grp in ev.groupby(keys):
+    if not has_peak:
+        keys = ["channel", "k", "onset_floor"]
+    for gk, grp in ev.groupby(keys):
+        if has_peak:
+            ch, k, onf, pkf = gk
+        else:
+            ch, k, onf = gk; pkf = np.nan
         r = match_events(grp, cat, tol_h)
         od = r["onset_diff_h"]
         n_fa = r["n_fa"]; n_fa_saa = r["n_fa_saa"]
@@ -142,6 +154,26 @@ def sweep_table(events_csv: Path, cat: pd.DataFrame, tol_h: float = MATCH_TOL_H)
         row.update({f"POD_{lab}": f"{h}/{n}" for lab, (h, n) in r["pfu_pod"].items()})
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+def _final_table(tbl, no_peak, args):
+    """FINAL 채널별 표 선택.
+    파일이 단일 파라미터 조합이면 그 조합을 그대로 FINAL로 쓴다
+    → --k/--onset/--peak echo 불필요. 여러 조합이 든 sweep CSV일 때만
+    --k/--onset[/--peak]로 한 조합을 골라낸다."""
+    param_cols = ["k", "onset_floor"] + ([] if no_peak else ["peak_floor"])
+    n_combo = tbl[param_cols].drop_duplicates().shape[0]
+    if n_combo <= 1:
+        return tbl.sort_values("POD", ascending=False)
+    if args.k is None or args.onset is None or (not no_peak and args.peak is None):
+        raise SystemExit(
+            f"[match] 이 CSV엔 파라미터 조합이 {n_combo}개 있습니다(sweep). "
+            "--k/--onset" + ("" if no_peak else "/--peak") +
+            " 로 FINAL 조합을 지정하세요.")
+    _sel = (tbl.k == args.k) & (tbl.onset_floor == args.onset)
+    if not no_peak:
+        _sel = _sel & (tbl.peak_floor == args.peak)
+    return tbl[_sel].sort_values("POD", ascending=False)
 
 
 def _load_count_channel(io, cache_dir: str, channel: str) -> pd.Series:
@@ -230,24 +262,75 @@ def plot_overlay(cnt: pd.Series, cat: pd.DataFrame, det: pd.DataFrame,
     print(f"[match] overlay saved → {out_path}")
 
 
-def plot_pod_far_scatter(tbl: pd.DataFrame, title: str, out_path: Path):
-    """POD-FAR 산점도, species 색상 (pro/omni/ele)."""
+SPECIES_ORDER = ["pro", "omni", "ele"]
+SPECIES_COLOR = {"pro": "#c0392b", "omni": "#e67e22", "ele": "#2980b9"}
+
+
+def plot_pod_far_scatter(tbl: pd.DataFrame, title: str, out_path: Path,
+                         onset_diff_by_channel: dict | None = None):
+    """좌: POD-FAR 산점도 (species 색상). 우: species별 onset_diff boxplot.
+
+    onset_diff_by_channel: {channel: np.ndarray(onset_diff_h)} — 우측 boxplot용
+    채널별 매칭 onset 지연 분포. None 이면 좌측 scatter 만 그린다(KSEM 판형과 동일).
+    """
     df = tbl.copy()
     if df.empty:
         return
     df["species"] = df["channel"].str.split("_").str[0]
-    color = {"pro": "#c0392b", "omni": "#e67e22", "ele": "#2980b9"}
-    fig, ax = plt.subplots(figsize=(7, 6))
+
+    draw_box = bool(onset_diff_by_channel)
+    if draw_box:
+        fig, (ax, axb) = plt.subplots(
+            1, 2, figsize=(14, 6),
+            gridspec_kw={"width_ratios": [2.2, 1.0]})
+    else:
+        fig, ax = plt.subplots(figsize=(7, 6))
+
+    # ── 좌: POD-FAR scatter ──
+    ax.text(0.02, 0.97, "ideal", color="green", fontsize=10,
+            transform=ax.transAxes, va="top")
     for sp, g in df.groupby("species"):
         ax.scatter(g["FAR"], g["POD"], s=70, alpha=0.85,
-                   c=color.get(sp, "#888"), label=sp, edgecolors="k", linewidths=0.5)
+                   c=SPECIES_COLOR.get(sp, "#888"), label=sp,
+                   edgecolors="k", linewidths=0.5)
     for _, r in df.iterrows():
         ax.annotate(r["channel"], (r["FAR"], r["POD"]), fontsize=6,
                     xytext=(3, 3), textcoords="offset points")
+    ax.axhline(0.5, ls=":", color="gray", lw=0.8)
+    ax.axvline(0.5, ls=":", color="gray", lw=0.8)
     ax.set_xlabel("FAR (false alarm rate)")
     ax.set_ylabel("POD (probability of detection)")
-    ax.set_xlim(-0.02, 1.02); ax.set_ylim(-0.02, 1.02)
+    ax.set_xlim(-0.02, 1.02); ax.set_ylim(-0.02, 1.08)
     ax.set_title(title, fontsize=10); ax.grid(True, alpha=0.3); ax.legend()
+
+    # ── 우: species별 onset_diff boxplot ──
+    if draw_box:
+        present = [sp for sp in SPECIES_ORDER
+                   if sp in set(df["species"])]
+        data, labels, box_colors = [], [], []
+        for sp in present:
+            chans = df[df["species"] == sp]["channel"].tolist()
+            vals = np.concatenate(
+                [onset_diff_by_channel.get(ch, np.array([]))
+                 for ch in chans]) if chans else np.array([])
+            vals = vals[np.isfinite(vals)]
+            if vals.size == 0:
+                continue
+            data.append(vals); labels.append(sp)
+            box_colors.append(SPECIES_COLOR.get(sp, "#888"))
+        if data:
+            bp = axb.boxplot(data, labels=labels, patch_artist=True,
+                             showfliers=False, widths=0.6)
+            for patch, c in zip(bp["boxes"], box_colors):
+                patch.set_facecolor(c); patch.set_alpha(0.55)
+            for med in bp["medians"]:
+                med.set_color("orange"); med.set_linewidth(1.5)
+        axb.axhline(0.0, ls="--", color="gray", lw=1.0)
+        axb.set_ylabel("onset_diff [h]\n(neg = POES leads)", fontsize=9)
+        axb.set_xlabel("species")
+        axb.set_title("onset_diff", fontsize=10)
+        axb.grid(True, axis="y", alpha=0.3)
+
     fig.tight_layout(); fig.savefig(out_path, dpi=120); plt.close(fig)
 
 
@@ -276,6 +359,10 @@ def main():
     print(f"[match] {CATALOG_LABEL} {len(cat)}개 이벤트 ({ERA[0]}~{ERA[1]})")
 
     name = _name_stem_from_events(args.events)
+    _ev_cols = pd.read_csv(Path(args.events), nrows=0).columns
+    no_peak = "peak_floor" not in _ev_cols
+    if no_peak:
+        name = f"{name}_onset"    # onset CSV는 event 결과와 폴더 안 겹치게
     outdir = Path(args.out) / name
     outdir.mkdir(parents=True, exist_ok=True)
 
@@ -284,8 +371,7 @@ def main():
     tbl.to_csv(f_all, index=False)
     print(f"[match] summary saved → {f_all} ({len(tbl)} rows)")
 
-    fin = tbl[(tbl.k == args.k) & (tbl.onset_floor == args.onset)
-              & (tbl.peak_floor == args.peak)].sort_values("POD", ascending=False)
+    fin = _final_table(tbl, no_peak, args)
     f_fin = outdir / f"{OUT_PREFIX}_match_{name}.csv"
     fin.to_csv(f_fin, index=False)
     print(f"[match] FINAL saved → {f_fin}")
@@ -303,16 +389,30 @@ def main():
               f"POD={best['POD']} FAR={best['FAR']} "
               f"n_fa_saa={best.get('n_fa_saa','?')}/{best.get('n_fa','?')}")
 
+    # boxplot용: FINAL 조합 채널별 onset_diff 분포 수집
+    onset_diff_by_channel = {}
+    ev_fin = pd.read_csv(Path(args.events))
+    _sf = (ev_fin.k == args.k) & (ev_fin.onset_floor == args.onset)
+    if not no_peak:
+        _sf = _sf & (ev_fin.peak_floor == args.peak)
+    sel_fin = ev_fin[_sf]
+    for ch, grp in sel_fin.groupby("channel"):
+        r = match_events(grp, cat, args.tol)
+        onset_diff_by_channel[ch] = r["onset_diff_h"]
+
     plot_pod_far_scatter(fin, f"{CATALOG_LABEL} match  {name}",
-                         outdir / f"fig_{OUT_PREFIX}_scatter_{name}.png")
+                         outdir / f"fig_{OUT_PREFIX}_scatter_{name}.png",
+                         onset_diff_by_channel=onset_diff_by_channel)
     print(f"[match] scatter → {outdir}/fig_{OUT_PREFIX}_scatter_{name}.png")
 
     # ── overlay (채널별 count 시계열 + 카탈로그 hit/miss + onset) ──
     if args.count_cache:
         cnt_io = _import_event_io(args.count_io or "poes_metop03_io", args.count_cache)
         ev = pd.read_csv(args.events)
-        sel = ev[(ev.k == args.k) & (ev.onset_floor == args.onset)
-                 & (ev.peak_floor == args.peak)]
+        _sm = (ev.k == args.k) & (ev.onset_floor == args.onset)
+        if not no_peak:
+            _sm = _sm & (ev.peak_floor == args.peak)
+        sel = ev[_sm]
         if args.overlay_channels == "all":
             channels = sorted(sel["channel"].unique())
         elif args.overlay_channels:

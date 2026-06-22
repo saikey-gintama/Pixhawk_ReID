@@ -132,9 +132,25 @@ def sweep_table(events_csv: Path, catalog_dir: Path,
     noaa_all, _ = spe_io.load(str(catalog_dir))
     noaa = spe_io.filter_by_date(noaa_all, *KSEM_ERA)
 
+    # peak_floor 컬럼이 없으면(=onset CSV, peak 사후필터 미적용) peak_floor=NaN으로
+    # 채워 "peak 필터 없음" 모드로 동작. 이러면 FAR 분모(n_det)가 onset 전량이 되어,
+    # on-board에서 사후 peak_floor를 쓸 수 없는 인과 조건과 정합한다.
+    has_peak = "peak_floor" in ev.columns
+    if not has_peak:
+        ev = ev.copy()
+        ev["peak_floor"] = np.nan
+
     rows = []
     keys = ["channel", "k", "onset_floor", "peak_floor"]
-    for (ch, k, onf, pkf), grp in ev.groupby(keys):
+    # groupby는 NaN 키를 그룹으로 묶지 못하므로, peak_floor가 전부 NaN이면
+    # 키에서 빼고 묶은 뒤 peak_floor=NaN을 되박는다.
+    if not has_peak:
+        keys = ["channel", "k", "onset_floor"]
+    for gk, grp in ev.groupby(keys):
+        if has_peak:
+            ch, k, onf, pkf = gk
+        else:
+            ch, k, onf = gk; pkf = np.nan
         r = match_events(grp, noaa, tol_h)
         rows.append({
             "channel": ch, "k": k, "onset_floor": onf, "peak_floor": pkf,
@@ -322,61 +338,71 @@ def plot_pod_far_scatter(tbl, title, out_path):
     print(f"[match] scatter saved -> {out_path}")
 
 
-def main():
-    ap = argparse.ArgumentParser(description="검출 이벤트 ↔ NOAA SPE 매칭/시각화")
-    ap.add_argument("--events", required=True, help="검출 이벤트 CSV (ana6_sweep_event.csv)")
-    ap.add_argument("--catalog", default=".", help="NOAA 캐시 경로(parquet 디렉터리 or json)")
-    ap.add_argument("--tol", type=float, default=MATCH_TOL_H, help="매칭 허용오차(h)")
-    ap.add_argument("--out", default="noaa_match_output", help="출력 폴더")
-    ap.add_argument("--k", type=int, default=10)
-    ap.add_argument("--onset", type=float, default=0.5)
-    ap.add_argument("--peak", type=float, default=3.0)
-    # 겹쳐그리기: 단일 채널(--count + --channel) 또는 전 채널 일괄(--count-dir)
-    ap.add_argument("--count", default=None, help="단일 채널 count parquet")
-    ap.add_argument("--channel", default=None, help="단일 채널명 (예: PD3A-OU)")
-    ap.add_argument("--count-dir", default=None,
-                    help="전 채널 일괄: count parquet들이 든 폴더 (채널명→PD_S_LOGIC.parquet 매핑)")
-    args = ap.parse_args()
+def _final_table(tbl, no_peak, args):
+    """FINAL 채널별 표 선택.
+    파일이 단일 파라미터 조합이면(=현 FSM 출력) 그 조합을 그대로 FINAL로 쓴다
+    → --k/--onset/--peak echo 불필요. 여러 조합이 든 sweep CSV(레거시)일 때만
+    --k/--onset[/--peak]로 한 조합을 골라낸다."""
+    param_cols = ["k", "onset_floor"] + ([] if no_peak else ["peak_floor"])
+    n_combo = tbl[param_cols].drop_duplicates().shape[0]
+    if n_combo <= 1:
+        return tbl.sort_values("POD", ascending=False)
+    # 여러 조합 = 레거시 sweep. selector 명시 필요.
+    if args.k is None or args.onset is None or (not no_peak and args.peak is None):
+        raise SystemExit(
+            f"[match] 이 CSV엔 파라미터 조합이 {n_combo}개 있습니다(sweep). "
+            "--k/--onset" + ("" if no_peak else "/--peak") +
+            " 로 FINAL 조합을 지정하세요.")
+    _sel = (tbl.k == args.k) & (tbl.onset_floor == args.onset)
+    if not no_peak:
+        _sel = _sel & (tbl.peak_floor == args.peak)
+    return tbl[_sel].sort_values("POD", ascending=False)
 
-    # 출력 폴더/파일명을 입력 CSV 파일명 그대로 따라감 (덮어쓰기 방지)
-    name = _name_stem_from_events(args.events)   # 예: quietoff_mad_w30_k10_on0.5_pk2
+
+def run_one(events_csv, args, noaa):
+    """단일 검출 CSV → 매칭 표 + scatter + overlay 일괄."""
+    name = _name_stem_from_events(events_csv)
+    _ev_cols = pd.read_csv(events_csv, nrows=0).columns
+    no_peak = "peak_floor" not in _ev_cols
+    if no_peak:
+        name = f"{name}_onset"        # onset CSV는 event 결과와 폴더 안 겹치게
     outdir = Path(args.out) / name
     outdir.mkdir(parents=True, exist_ok=True)
+    print(f"\n=== [match] {Path(events_csv).name} -> {outdir} ===")
 
-    # 1) 전 조합 POD/FAR 표 (27조합 전체 — 조합 무관하게 항상 동일)
-    tbl = sweep_table(Path(args.events), Path(args.catalog), args.tol)
+    # 1) 전 조합 POD/FAR 표
+    tbl = sweep_table(Path(events_csv), Path(args.catalog), args.tol)
     tbl.to_csv(outdir / f"noaa_match_summary_all_{name}.csv", index=False)
-    print(f"[match] summary (all combos) saved → "
-          f"{outdir}/noaa_match_summary_all_{name}.csv  ({len(tbl)} rows)")
+    print(f"[match] summary saved -> noaa_match_summary_all_{name}.csv ({len(tbl)} rows)")
 
-    # FINAL 조합만 추린 채널별 표 (별도 저장 + 콘솔)
-    fin = tbl[(tbl.k == args.k) & (tbl.onset_floor == args.onset)
-              & (tbl.peak_floor == args.peak)].sort_values("POD", ascending=False)
+    # 2) FINAL (단일조합이면 자동, sweep면 selector)
+    fin = _final_table(tbl, no_peak, args)
     fin.to_csv(outdir / f"noaa_match_{name}.csv", index=False)
-    print(f"[match] FINAL ({name}) saved -> "
-          f"{outdir}/noaa_match_{name}.csv")
+    print(f"[match] FINAL saved -> noaa_match_{name}.csv")
     print(fin.to_string(index=False))
 
-    # scatter figure (Figure for paper)
-    plot_pod_far_scatter(
-        fin, f"NOAA match  {name}",
-        outdir / f"fig_noaa_scatter_{name}.png")
+    # 3) scatter
+    plot_pod_far_scatter(fin, f"NOAA match  {name}",
+                         outdir / f"fig_noaa_scatter_{name}.png")
 
-    # 2) 겹쳐그리기
-    ev = pd.read_csv(args.events)
-    noaa_all, _ = spe_io.load(args.catalog)
-    noaa = spe_io.filter_by_date(noaa_all, *KSEM_ERA)
+    # 4) 겹쳐그리기
+    ev = pd.read_csv(events_csv)
+    _pcols = ["k", "onset_floor"] + (["peak_floor"] if "peak_floor" in ev.columns else [])
+    ev_single = ev[_pcols].drop_duplicates().shape[0] <= 1
 
-    def _draw(channel: str, parquet_path: Path):
-        det = ev[(ev.channel == channel) & (ev.k == args.k)
-                 & (ev.onset_floor == args.onset) & (ev.peak_floor == args.peak)]
+    def _draw(channel, parquet_path):
+        if ev_single:
+            det = ev[ev.channel == channel]
+        else:
+            _m = (ev.channel == channel) & (ev.k == args.k) & (ev.onset_floor == args.onset)
+            if "peak_floor" in ev.columns:
+                _m = _m & (ev.peak_floor == args.peak)
+            det = ev[_m]
         cnt = _load_count(parquet_path)
-        plot_overlay(cnt, noaa, det,
-                     f"{channel}  {name}",
+        plot_overlay(cnt, noaa, det, f"{channel}  {name}",
                      outdir / f"overlay_{channel}_{name}.png", args.tol)
 
     if args.count_dir:
-        # 전 채널 일괄: CSV에 등장하는 모든 채널에 대해 parquet 찾아 그림
         cdir = Path(args.count_dir)
         for channel in sorted(ev["channel"].unique()):
             pq = cdir / _channel_to_parquet(channel)
@@ -386,6 +412,53 @@ def main():
                 print(f"[match] skip {channel}: parquet 없음 ({pq.name})")
     elif args.count and args.channel:
         _draw(args.channel, Path(args.count))
+
+
+def _discover(events_dir, kind):
+    """fsm*_output 폴더 트리에서 fsm_{kind}_*.csv 전부 찾기(runtag 하위폴더 포함)."""
+    return sorted(Path(events_dir).rglob(f"fsm_{kind}_*.csv"))
+
+
+def main():
+    ap = argparse.ArgumentParser(description="검출 이벤트 ↔ NOAA SPE 매칭/시각화")
+    src = ap.add_mutually_exclusive_group(required=True)
+    src.add_argument("--events", help="검출 CSV 한 개 (단일 실행)")
+    src.add_argument("--events-dir",
+                     help="fsm*_output 폴더 — 그 아래 fsm_{kind}_*.csv 전부 실행")
+    ap.add_argument("--kind", choices=["onset", "event"], default="onset",
+                    help="--events-dir 모드에서 고를 CSV 종류 (default onset)")
+    ap.add_argument("--catalog", default=".", help="NOAA 캐시 경로(parquet 디렉터리 or json)")
+    ap.add_argument("--tol", type=float, default=MATCH_TOL_H, help="매칭 허용오차(h)")
+    ap.add_argument("--out", default="noaa_match_output", help="출력 루트 폴더")
+    ap.add_argument("--count-dir", default=None,
+                    help="전 채널 overlay: count parquet 폴더 (채널명->PD_S_LOGIC.parquet)")
+    # 단일 채널 overlay (단일 --events 모드에서만 의미)
+    ap.add_argument("--count", default=None, help="단일 채널 count parquet")
+    ap.add_argument("--channel", default=None, help="단일 채널명 (예: PD3A-OU)")
+    # 레거시 sweep CSV 전용 FINAL selector — 단일조합 파일이면 무시됨
+    ap.add_argument("--k", type=int, default=None,
+                    help="[sweep 전용] 여러 조합 CSV일 때만 FINAL k 지정. 단일조합이면 불필요.")
+    ap.add_argument("--onset", type=float, default=None,
+                    help="[sweep 전용] 여러 조합 CSV일 때만 FINAL onset_floor 지정.")
+    ap.add_argument("--peak", type=float, default=None,
+                    help="[sweep 전용] 여러 조합 event CSV일 때만 FINAL peak_floor 지정.")
+    args = ap.parse_args()
+
+    # NOAA 카탈로그는 한 번만 로드해 모든 파일 overlay에 재사용
+    noaa_all, _ = spe_io.load(args.catalog)
+    noaa = spe_io.filter_by_date(noaa_all, *KSEM_ERA)
+
+    if args.events_dir:
+        files = _discover(Path(args.events_dir), args.kind)
+        if not files:
+            raise SystemExit(
+                f"[match] {args.events_dir} 아래 fsm_{args.kind}_*.csv 없음")
+        print(f"[match] {len(files)}개 {args.kind} CSV 발견 -> 전부 매칭")
+        for f in files:
+            run_one(f, args, noaa)
+        print(f"\n[match] 완료: {len(files)}개 -> {args.out}/")
+    else:
+        run_one(Path(args.events), args, noaa)
 
 
 if __name__ == "__main__":
