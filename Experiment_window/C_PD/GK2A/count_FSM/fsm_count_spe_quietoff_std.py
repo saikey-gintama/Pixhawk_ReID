@@ -93,7 +93,7 @@ def _numstr(v):
     return str(int(f)) if f.is_integer() else str(f)
 
 
-FSM_OUTPUT_DIR = _THIS_DIR / "fsm_output"
+FSM_OUTPUT_DIR = _THIS_DIR / "fsm2_output"
 FSM_OUTPUT_DIR.mkdir(exist_ok=True)
 
 TAG = "quietoff_std"   # 출력 파일명 태그

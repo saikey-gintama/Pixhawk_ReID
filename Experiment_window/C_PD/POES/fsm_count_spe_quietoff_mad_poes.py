@@ -244,7 +244,7 @@ def main():
     runtag   = build_runtag(TAG, window, k, onset_fl, peak_fl)
 
     cache = Path(args.cache)
-    out_root = Path(args.out) if args.out else (cache.parent / "fsm_output")
+    out_root = Path(args.out) if args.out else (cache.parent / "fsm2_output")
     out_dir  = out_root / runtag
     out_dir.mkdir(parents=True, exist_ok=True)
 
