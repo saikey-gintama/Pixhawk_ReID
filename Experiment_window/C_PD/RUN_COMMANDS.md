@@ -108,6 +108,78 @@ python fsm_count_spe_blc1_fixed_poes.py `
 
 ---
 
+## 매칭 (NOAA / SWPC × GK2A / POES)
+
+> 출력은 `*_match_output` 계열 새 경로. 기존 `*_match_output`(논문 결과) 덮지 말 것.  
+> 실행 위치: `Experiment_window/C_PD/`
+
+### 통합 런너 (run_matcher.py)
+
+```powershell
+# GK2A × NOAA (onset CSV 자동 수집, fsm2_output 전체)
+python run_matcher.py --detector gk2a    --catalog noaa
+python run_matcher.py --detector gk2a    --catalog swpc
+
+# POES MetOp03
+python run_matcher.py --detector metop03 --catalog noaa
+python run_matcher.py --detector metop03 --catalog swpc
+
+# POES NOAA19
+python run_matcher.py --detector noaa19  --catalog noaa
+python run_matcher.py --detector noaa19  --catalog swpc
+
+# dry-run 확인
+python run_matcher.py --detector gk2a --catalog noaa --dry
+```
+
+### 개별 매처 직접 (검증용 단일 파일)
+
+```powershell
+# GK2A / NOAA — 단일 파일
+cd NOAA_GOES
+python noaa_goes_spe_match.py `
+    --events ../GK2A/count_FSM/fsm2_output/blc1_lowe_w5_m1.25_on0.5_pk2/fsm_onset_blc1_lowe_w5_m1.25_on0.5_pk2.csv `
+    --catalog ./noaa_goes_spe_cache_parquet `
+    --out     ../GK2A/noaa_match_output
+cd ..
+
+# GK2A / SWPC — 폴더 전체
+cd SWPC_Alert
+python swpc_alert_espe_match.py `
+    --events-dir ../GK2A/count_FSM/fsm2_output `
+    --kind onset `
+    --catalog ./espe_cache_parquet `
+    --out     ../GK2A/swpc_match_output `
+    --count-dir ../GK2A/KSEM_count/ksem_cache_parquet
+cd ..
+
+# POES MetOp03 / SWPC — 단일 파일
+cd POES
+python swpc_alert_espe_match_poes.py `
+    --events  MetOp03_count/fsm2_output/blc1_lowe_w5_m1.25_on0.5_pk2/fsm_onset_blc1_lowe_w5_m1.25_on0.5_pk2.csv `
+    --catalog ../SWPC_Alert/espe_cache_parquet `
+    --spe-io  ../SWPC_Alert/swpc_alert_espe_io `
+    --out     MetOp03_count/swpc_match_output
+cd ..
+```
+
+### 통합 비교표 (summarize_matches)
+
+```powershell
+cd NOAA_GOES
+# C_PD/ 전체 재귀 탐색 — noaa_match_*.csv + swpc_match_*.csv 자동 수집
+python summarize_matches.py `
+    --dir .. `
+    --out ../match_consolidated `
+    --topk 5
+cd ..
+```
+
+출력: `match_consolidated/{all_channels,method_rank,best_per_method,by_group,by_ch_c}.csv`
+      + `match_comparison.xlsx` (openpyxl 설치 시)
+
+---
+
 ## Löwe baseline (blc1_lowe · POES) — 참고
 
 ```powershell
