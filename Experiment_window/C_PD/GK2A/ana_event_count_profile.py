@@ -34,21 +34,21 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
 # ── 경로 설정 (여기만 수정) ───────────────────────────────────────
-# ksem_io.py 가 있는 디렉터리 (KSEM_count/ 와 같은 위치)
-KSEM_IO_DIR       = Path(__file__).parent   # 이 파일을 KSEM_count/에 두는 전제
+# ksem_io.py 가 있는 디렉터리 (GK2A/KSEM_count/)
+KSEM_IO_DIR       = Path(__file__).parent / "KSEM_count"   # GK2A/KSEM_count/
 
 # count parquet 디렉터리 (ksem_flux_config.py 의 COUNT_PARQUET_DIR 와 동일)
 COUNT_PARQUET_DIR = KSEM_IO_DIR / "ksem_cache_parquet"
 
 # ── 이벤트 카탈로그 (io 모듈 캐시 디렉터리) ───────────────────────
 # match 코드와 동일하게 io 모듈로 load. 단일 parquet 직접 읽기(X) → io.load(dir).
-_C_KSEM           = KSEM_IO_DIR.parent          # C_KSEM/
+_C_KSEM           = KSEM_IO_DIR.parent.parent               # C_PD/
 # NOAA SPE: noaa_goes_spe_io.load(dir) → (df, meta)
 NOAA_IO_DIR       = _C_KSEM / "NOAA_GOES"
 NOAA_SPE_CATALOG_DIR  = NOAA_IO_DIR / "noaa_goes_spe_cache_parquet"
 # SWPC eSPE: swpc_alert_espe_io.load(dir) → (df, meta)
 SWPC_IO_DIR       = _C_KSEM / "SWPC_Alert"
-SWPC_ESPE_CATALOG_DIR = SWPC_IO_DIR / "espe_cache_parquet"
+SWPC_ESPE_CATALOG_DIR = SWPC_IO_DIR / "swpc_espe_cache_parquet"
 
 # KSEM 데이터 기간 (match 코드 KSEM_ERA와 동일)
 KSEM_ERA          = ("2019-01-01", "2024-12-31")

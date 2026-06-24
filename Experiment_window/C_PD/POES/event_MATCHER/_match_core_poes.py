@@ -303,12 +303,18 @@ def plot_pod_far_scatter(tbl: pd.DataFrame, title: str, out_path: Path,
     print(f"[match] scatter → {out_path}")
 
 
-def run_matcher(catalog_label: str, default_io: str, out_prefix: str):
+def run_matcher(catalog_label: str, default_io: str, out_prefix: str,
+                default_catalog: str | None = None):
     """POES 매처 공통 main 몸체. catalog_label/default_io/out_prefix 만 다르다."""
     ap = argparse.ArgumentParser(
         description=f"POES FSM ↔ {catalog_label} 매칭/평가")
     ap.add_argument("--events",  required=True, help="POES FSM event/onset CSV")
-    ap.add_argument("--catalog", required=True, help=f"{catalog_label} 캐시 parquet 디렉터리")
+    if default_catalog:
+        ap.add_argument("--catalog", default=default_catalog,
+                        help=f"{catalog_label} 캐시 parquet 디렉터리")
+    else:
+        ap.add_argument("--catalog", required=True,
+                        help=f"{catalog_label} 캐시 parquet 디렉터리")
     ap.add_argument("--spe-io",  default=default_io, help="카탈로그 io 모듈명/경로")
     ap.add_argument("--tol",     type=float, default=MATCH_TOL_H)
     ap.add_argument("--out",     default=f"{out_prefix}_match_output",

@@ -12,17 +12,18 @@ KSEM 등 특정 데이터셋에 종속되지 않는다(CSV 경로를 인자로 �
   - POD = (매칭된 NOAA 이벤트 수) / (NOAA 이벤트 수)
   - FAR = (NOAA와 매칭 안 된 검출 수) / (검출 수)
 
-사용:
-  # 단일 CSV
+사용 (GK2A/event_MATCHER/ 에서):
+  # 단일 CSV — catalog/count-dir 기본값 자동, sweep 파라미터만 지정
   python noaa_goes_spe_match.py \
-    --events fsm_onset_blc1_lowe_...csv --catalog . [--out noaa_match_output]
+    --events ../count_FSM/fsm2_output/<tag>/fsm_onset_<tag>.csv
 
   # fsm*_output 폴더 전체 (onset CSV 자동)
   python noaa_goes_spe_match.py \
-    --events-dir ../GK2A/count_FSM/fsm2_output --kind onset --catalog .
+    --events-dir ../count_FSM/fsm2_output --kind onset
 """
 from __future__ import annotations
 import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -30,6 +31,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
+_HERE = Path(__file__).resolve().parent          # GK2A/event_MATCHER/
+# noaa_goes_spe_io 는 ../../NOAA_GOES/ 에 위치
+sys.path.insert(0, str(_HERE.parent.parent / "NOAA_GOES"))
 import noaa_goes_spe_io as spe_io
 from _match_core import (
     MATCH_TOL_H, KSEM_ERA, PFU_BINS, PFU_LABELS,
@@ -233,10 +237,13 @@ def main():
                      help="fsm*_output 폴더 — 그 아래 fsm_{kind}_*.csv 전부 실행")
     ap.add_argument("--kind", choices=["onset", "event"], default="onset",
                     help="--events-dir 모드에서 고를 CSV 종류 (default onset)")
-    ap.add_argument("--catalog", default=".", help="NOAA 캐시 경로(parquet 디렉터리 or json)")
+    ap.add_argument("--catalog",
+                    default=str(_HERE.parent.parent / "NOAA_GOES" / "noaa_goes_spe_cache_parquet"),
+                    help="NOAA 캐시 경로(parquet 디렉터리 or json)")
     ap.add_argument("--tol", type=float, default=MATCH_TOL_H, help="매칭 허용오차(h)")
     ap.add_argument("--out", default="noaa_match_output", help="출력 루트 폴더")
-    ap.add_argument("--count-dir", default=None,
+    ap.add_argument("--count-dir",
+                    default=str(_HERE.parent / "KSEM_count" / "ksem_cache_parquet"),
                     help="전 채널 overlay: count parquet 폴더")
     ap.add_argument("--count",   default=None, help="단일 채널 count parquet")
     ap.add_argument("--channel", default=None, help="단일 채널명 (예: PD3A-OU)")

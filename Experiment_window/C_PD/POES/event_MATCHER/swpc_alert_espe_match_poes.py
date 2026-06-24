@@ -12,18 +12,21 @@ run_matcher() 를 호출한다.
   swpc_match_<runtag>.csv               FINAL 조합 채널별, POD 내림차순
   fig_swpc_scatter_<runtag>.png         POD-FAR 산점도 (species 색상)
 
-사용 (POES 루트에서):
+사용 (POES/event_MATCHER/ 에서):
   python swpc_alert_espe_match_poes.py \\
-    --events MetOp03_count/fsm2_output/<tag>/fsm_onset_<tag>.csv \\
-    --catalog ../SWPC_Alert/espe_cache_parquet \\
-    --spe-io ../SWPC_Alert/swpc_alert_espe_io \\
-    --out MetOp03_count/swpc_match_output
+    --events ../MetOp03_count/fsm2_output/<tag>/fsm_onset_<tag>.csv
+
+  # catalog 는 ../../SWPC_Alert/swpc_espe_cache_parquet 으로 자동 설정됨
 """
+from pathlib import Path
 from _match_core_poes import run_matcher
+
+_HERE = Path(__file__).resolve().parent          # POES/event_MATCHER/
 
 if __name__ == "__main__":
     run_matcher(
-        catalog_label = "SWPC ESPE",
-        default_io    = "swpc_alert_espe_io",
-        out_prefix    = "swpc",
+        catalog_label   = "SWPC ESPE",
+        default_io      = "swpc_alert_espe_io",
+        out_prefix      = "swpc",
+        default_catalog = str(_HERE.parent.parent / "SWPC_Alert" / "swpc_espe_cache_parquet"),
     )

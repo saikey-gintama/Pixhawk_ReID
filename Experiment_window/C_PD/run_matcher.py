@@ -39,11 +39,11 @@ HERE = Path(__file__).resolve().parent   # C_PD/
 # ── 경로 테이블 (HERE 기준 상대경로) ───────────────────────────────
 _GK2A_COUNT   = HERE / "GK2A" / "KSEM_count"  / "ksem_cache_parquet"
 _NOAA_CAT     = HERE / "NOAA_GOES" / "noaa_goes_spe_cache_parquet"
-_SWPC_CAT     = HERE / "SWPC_Alert" / "espe_cache_parquet"
-_NOAA_MATCH   = HERE / "NOAA_GOES" / "noaa_goes_spe_match.py"
-_SWPC_MATCH   = HERE / "SWPC_Alert" / "swpc_alert_espe_match.py"
-_NOAA_MATCH_P = HERE / "POES"       / "noaa_goes_spe_match_poes.py"
-_SWPC_MATCH_P = HERE / "POES"       / "swpc_alert_espe_match_poes.py"
+_SWPC_CAT     = HERE / "SWPC_Alert" / "swpc_espe_cache_parquet"
+_NOAA_MATCH   = HERE / "GK2A"       / "event_MATCHER" / "noaa_goes_spe_match.py"
+_SWPC_MATCH   = HERE / "GK2A"       / "event_MATCHER" / "swpc_alert_espe_match.py"
+_NOAA_MATCH_P = HERE / "POES"       / "event_MATCHER" / "noaa_goes_spe_match_poes.py"
+_SWPC_MATCH_P = HERE / "POES"       / "event_MATCHER" / "swpc_alert_espe_match_poes.py"
 _NOAA_IO      = HERE / "NOAA_GOES"  / "noaa_goes_spe_io"
 _SWPC_IO      = HERE / "SWPC_Alert" / "swpc_alert_espe_io"
 
