@@ -92,6 +92,8 @@ def parse_args():
                    help=f"onset floor, threshold lower clip (default {ONSET_FLOOR})")
     p.add_argument("--peak",   type=float, default=PEAK_FLOOR,
                    help=f"peak floor, post-filter (default {PEAK_FLOOR})")
+    p.add_argument("--out",    default=None,
+                   help="출력 루트 디렉터리 (기본: count_FSM/fsm2_output)")
     return p.parse_args()
 
 
@@ -217,7 +219,7 @@ def main():
     onset_fl = args.onset
     peak_fl  = args.peak
     runtag   = build_runtag(TAG, window, mult, onset_fl, peak_fl)
-    out_dir  = FSM_OUTPUT_DIR / runtag
+    out_dir  = (Path(args.out) if args.out else FSM_OUTPUT_DIR) / runtag
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"[fsm:{TAG}] params: window={window}d mult={mult} onset={onset_fl} "

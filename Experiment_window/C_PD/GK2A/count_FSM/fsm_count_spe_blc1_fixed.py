@@ -145,6 +145,8 @@ def parse_args():
                         "(없으면 CONST_C_BY_LOGIC fallback만 사용)")
     p.add_argument("--onset", type=float, default=ONSET_FLOOR)
     p.add_argument("--peak",  type=float, default=PEAK_FLOOR)
+    p.add_argument("--out",   default=None,
+                   help="출력 루트 디렉터리 (기본: count_FSM/fsm2_output)")
     return p.parse_args()
 
 
@@ -273,7 +275,7 @@ def main():
     onset_fl = args.onset
     peak_fl  = args.peak
     runtag   = build_runtag(TAG, mode, pctl, onset_fl, peak_fl)
-    out_dir  = FSM_OUTPUT_DIR / runtag
+    out_dir  = (Path(args.out) if args.out else FSM_OUTPUT_DIR) / runtag
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"[fsm:{TAG}] params: mode={mode} pctl={pctl} onset={onset_fl} "

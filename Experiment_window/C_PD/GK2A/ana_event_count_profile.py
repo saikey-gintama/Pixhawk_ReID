@@ -23,6 +23,7 @@ end_time 처리:
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -672,6 +673,17 @@ def save_event_count_stats(df_count: pd.DataFrame,
 # main
 # ─────────────────────────────────────────────────────────────────
 def main():
+    global COUNT_PARQUET_DIR, OUT_DIR
+    ap = argparse.ArgumentParser(description="GK2A KSEM ana_event_count_profile")
+    ap.add_argument("--cache", default=None,
+                    help="KSEM count parquet 디렉터리 (기본: KSEM_count/ksem_cache_parquet)")
+    ap.add_argument("--out",   default=None,
+                    help="출력 디렉터리 (기본: KSEM_count/ana_output)")
+    args = ap.parse_args()
+    if args.cache:
+        COUNT_PARQUET_DIR = Path(args.cache)
+    if args.out:
+        OUT_DIR = Path(args.out)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     # ── 카탈로그 ────────────────────────────────────────────────
