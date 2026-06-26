@@ -76,7 +76,7 @@ def _import_io(io_arg: str, cache_dir: str):
 def parse_args():
     p = argparse.ArgumentParser(
         description=f"FSM count SPE detector POES [{TAG}] — "
-                    f"Loewe et al. (2025) 5d constant-fit background, T=mult*B. "
+                    f"Lowe et al. (2025) 5d constant-fit background, T=mult*B. "
                     f"engine byte-identical to GK2A blc1_lowe.")
     p.add_argument("--io",     required=True,
                    help="io 모듈명/경로 (poes_metop03_io | poes_noaa19_io)")
@@ -85,9 +85,9 @@ def parse_args():
     p.add_argument("--out",    default=None,
                    help="출력 루트 (기본: 캐시 옆 fsm_output)")
     p.add_argument("--window", type=int,   default=BG_WINDOW_DAYS,
-                   help=f"background sliding window [day] (default {BG_WINDOW_DAYS}, Loewe=5)")
+                   help=f"background sliding window [day] (default {BG_WINDOW_DAYS}, Lowe=5)")
     p.add_argument("--mult",   type=float, default=LOWE_MULT,
-                   help=f"threshold multiplier T=mult*B (default {LOWE_MULT}, Loewe=1.25)")
+                   help=f"threshold multiplier T=mult*B (default {LOWE_MULT}, Lowe=1.25)")
     p.add_argument("--onset",  type=float, default=ONSET_FLOOR,
                    help=f"onset floor, threshold lower clip (default {ONSET_FLOOR})")
     p.add_argument("--peak",   type=float, default=PEAK_FLOOR,
@@ -257,7 +257,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"[fsm:{TAG}] io={args.io} params: window={window}d mult={mult} "
-          f"onset={onset_fl} peak={peak_fl}  (Loewe: 5d constant-fit mean, T={mult}*B)")
+          f"onset={onset_fl} peak={peak_fl}  (Lowe: 5d constant-fit mean, T={mult}*B)")
     print(f"[fsm:{TAG}] runtag: {runtag}")
     print(f"[fsm:{TAG}] out: {out_dir}")
     print(f"[fsm:{TAG}] Loading count data...")
@@ -312,7 +312,7 @@ def main():
     df_ev.to_csv(out_ev, index=False)
     print(f"\n[fsm:{TAG}] onset saved: {out_on}  ({len(df_on)} rows)")
     print(f"\n[fsm:{TAG}] event saved: {out_ev}  ({len(df_ev)} rows)")
-    print(f"[fsm:{TAG}] METHOD=Loewe constant-fit  WINDOW={window}d MULT={mult} "
+    print(f"[fsm:{TAG}] METHOD=Lowe constant-fit  WINDOW={window}d MULT={mult} "
           f"floor={onset_fl} peak={peak_fl}")
     if not df_on.empty:
         n_on = df_on.groupby("channel").size().rename("n_onset")

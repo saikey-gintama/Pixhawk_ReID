@@ -81,13 +81,13 @@ def parse_args():
     """파라미터만 argument로 받는다. 미지정 시 위 기본값 사용.
     출력 폴더/파일명은 TAG + 이 값들에서 자동 생성되므로 직접 지정 불필요."""
     p = argparse.ArgumentParser(
-        description=f"FSM count SPE detector [{TAG}] — Löwe et al. (2025) "
+        description=f"FSM count SPE detector [{TAG}] — Lowe et al. (2025) "
                     f"5d constant-fit background, T=mult·B. "
                     f"params override defaults, output names auto-built from TAG+params.")
     p.add_argument("--window", type=int,   default=BG_WINDOW_DAYS,
-                   help=f"background sliding window [day] (default {BG_WINDOW_DAYS}, Löwe=5)")
+                   help=f"background sliding window [day] (default {BG_WINDOW_DAYS}, Lowe=5)")
     p.add_argument("--mult",   type=float, default=LOWE_MULT,
-                   help=f"threshold multiplier T=mult*B (default {LOWE_MULT}, Löwe=1.25)")
+                   help=f"threshold multiplier T=mult*B (default {LOWE_MULT}, Lowe=1.25)")
     p.add_argument("--onset",  type=float, default=ONSET_FLOOR,
                    help=f"onset floor, threshold lower clip (default {ONSET_FLOOR})")
     p.add_argument("--peak",   type=float, default=PEAK_FLOOR,
@@ -223,7 +223,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"[fsm:{TAG}] params: window={window}d mult={mult} onset={onset_fl} "
-          f"peak={peak_fl}  (Löwe: 5d constant-fit mean, T={mult}·B)")
+          f"peak={peak_fl}  (Lowe: 5d constant-fit mean, T={mult}·B)")
     print(f"[fsm:{TAG}] runtag: {runtag}")
     print(f"[fsm:{TAG}] Loading count data...")
     df_count = load_count()
@@ -268,7 +268,7 @@ def main():
     df_ev.to_csv(out_ev, index=False)
     print(f"\n[fsm:{TAG}] onset saved: {out_on}  ({len(df_on)} rows)")
     print(f"[fsm:{TAG}] event saved: {out_ev}  ({len(df_ev)} rows)")
-    print(f"[fsm:{TAG}] METHOD=Löwe constant-fit  WINDOW={window}d MULT={mult} "
+    print(f"[fsm:{TAG}] METHOD=Lowe constant-fit  WINDOW={window}d MULT={mult} "
           f"floor={onset_fl} peak={peak_fl}")
     if not df_on.empty:
         n_on = df_on.groupby("channel").size().rename("n_onset")
