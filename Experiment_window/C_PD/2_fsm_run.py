@@ -18,7 +18,11 @@ Sweep:
     quietoff_mad/std, quiet7_mad/std : win, k, onset, peak
     blc1_lowe                         : win, onset, peak  (k 미사용)
     blc1_fixed                        : onset, peak       (win/k 미사용)
+    cusum                             : win, k, onset, peak (quietoff와 동일 정렬)
   quiet7: win <= 7 조합은 자동 skip (배경 추정 불가 — quiet_days=7 고정).
+  cusum : k<=1 조합은 자동 skip (ln(k)<=0이면 검출 불가 — FSM 자체 방어와 동일 기준).
+          h는 sweep 축이 아니라 고정값(--h, 기본 5)으로 매 실행에 항상 전달됨 —
+          먼저 (win,k,onset,peak) best를 찾고 필요시 h만 별도 미세 sweep하는 전략.
 
 안전장치:
   --dry   : 조합 수만 출력, 실행 안 함.
@@ -77,6 +81,7 @@ def _fsm_type(script: Path) -> str:
     if "quietoff"   in name: return "quietoff"
     if "blc1_fixed" in name: return "blc1_fixed"
     if "blc1_lowe"  in name: return "blc1_lowe"
+    if "cusum"      in name: return "cusum"
     raise ValueError(f"알 수 없는 FSM: {name}")
 
 # ── FSM 타입별 지원 sweep 축 ─────────────────────────────────────────────
@@ -85,7 +90,12 @@ _FSM_AXES = {
     "quiet7":     ("win", "k", "onset", "peak"),
     "blc1_lowe":  ("win", "onset", "peak"),
     "blc1_fixed": ("onset", "peak"),
+    "cusum":      ("win", "k", "onset", "peak"),
 }
+
+# cusum의 h(CUSUM 결정 임계) — sweep 축 아님, 매 실행에 고정값으로 전달.
+# 먼저 (win,k,onset,peak) best를 찾고 필요시 h만 별도 미세 sweep하는 2단계 전략.
+_CUSUM_H_FIXED = 5.0
 
 # ── internal key → FSM CLI 인자명 ────────────────────────────────────────
 _AXIS_CLI = {"win": "--window", "k": "--k", "onset": "--onset", "peak": "--peak"}
@@ -101,6 +111,8 @@ _TAG_MAP = {
     "fsm_count_spe_quietoff_mad_poes": "quietoff_mad",
     "fsm_count_spe_blc1_lowe_poes":    "blc1_lowe",
     "fsm_count_spe_blc1_fixed_poes":   "blc1_fixed",
+    "fsm_count_spe_cusum":             "cusum",
+    "fsm_count_spe_cusum_poes":        "cusum",
 }
 
 # ── FSM default 파라미터 (resume runtag 예측에서 미지정 축 보완용) ────────────
@@ -110,6 +122,7 @@ _FSM_DEFAULTS = {
     "quiet7":     {"win": 30, "k": 10.0, "onset": 0.5, "peak": 2.0},
     "blc1_lowe":  {"win": 5,  "onset": 0.5, "peak": 2.0},
     "blc1_fixed": {"onset": 0.5, "peak": 2.0},
+    "cusum":      {"win": 30, "k": 3.0, "onset": 0.5, "peak": 2.0},
 }
 
 # blc1_lowe --mult default (runtag에 m{mult} 포함 — sweep 축이 아님)
@@ -140,6 +153,9 @@ def _predict_runtag(script: Path, fsm_type: str, combo: dict) -> str:
 
     if fsm_type in ("quietoff", "quiet7"):
         return f"{tag}_w{w}_k{_numstr(k)}_on{_numstr(on)}_pk{_numstr(pk)}"
+    if fsm_type == "cusum":
+        # h는 sweep 축 아님 — 고정값(_CUSUM_H_FIXED) 그대로 runtag에 반영
+        return f"{tag}_w{w}_k{_numstr(k)}_h{_numstr(_CUSUM_H_FIXED)}_on{_numstr(on)}_pk{_numstr(pk)}"
     if fsm_type == "blc1_lowe":
         # mult는 sweep 축 아님 — default 고정
         return f"{tag}_w{w}_m{_numstr(_LOWE_MULT_DEFAULT)}_on{_numstr(on)}_pk{_numstr(pk)}"
@@ -157,7 +173,7 @@ def _build_combos(
     """
     FSM 타입별 지원 축만 사용해 데카르트 곱 생성.
     Returns (combos, n_invalid_skipped).
-    n_invalid: quiet7에서 win <= 7로 제외된 조합 수.
+    n_invalid: quiet7에서 win <= 7, cusum에서 k <= 1로 제외된 조합 수.
     """
     supported = _FSM_AXES[fsm_type]
     sweep_map = {"win": win_vals, "k": k_vals, "onset": onset_vals, "peak": peak_vals}
@@ -178,6 +194,9 @@ def _build_combos(
         if fsm_type == "quiet7" and combo.get("win", 9999) <= 7:
             n_invalid += 1
             continue
+        if fsm_type == "cusum" and combo.get("k", 9999) <= 1:
+            n_invalid += 1  # ln(k)<=0 -> 검출 불가 (FSM 자체 방어와 동일 기준)
+            continue
         combos.append(combo)
     return combos, n_invalid
 
@@ -196,6 +215,9 @@ def _build_cmd(script: Path, detector: str, out_parent: Path, combo: dict) -> li
         if not csv_path.exists():
             print(f"  WARNING: --const-csv 미존재 (1_ana 먼저 실행 필요) → {csv_path}")
         cmd += ["--mode", "const", "--const-csv", str(csv_path)]
+
+    if _fsm_type(script) == "cusum":
+        cmd += ["--h", str(_CUSUM_H_FIXED)]  # sweep 축 아님 — 항상 고정값 전달
 
     for ax, val in combo.items():
         cmd += [_AXIS_CLI[ax], str(val)]
@@ -221,14 +243,21 @@ def main():
                     help="peak 값 콤마 리스트.   예) 0,0.5,1.0,2.0,3.0")
     ap.add_argument("--k",     default=None, metavar="LIST",
                     help="k 값 콤마 리스트.      예) 0,1,3,5,7,10,15,20")
+    ap.add_argument("--baselines", default=None, metavar="LIST",
+                    help="baseline 필터 콤마 리스트 (예: quietoff,cusum). 미지정=전체(기존 동작)")
     args = ap.parse_args()
 
     det        = args.detector
     out_parent = _OUT_DIR[det]
     scripts    = sorted(_fsm_dir(det).glob("fsm_count_spe_*.py"))
 
+    if args.baselines:
+        wanted = {b.strip() for b in args.baselines.split(",") if b.strip()}
+        scripts = [s for s in scripts if _fsm_type(s) in wanted]
+
     if not scripts:
-        raise SystemExit(f"[2_fsm] ERROR: FSM 스크립트 없음 → {_fsm_dir(det)}")
+        raise SystemExit(f"[2_fsm] ERROR: FSM 스크립트 없음 → {_fsm_dir(det)}"
+                         + (f" (--baselines {args.baselines} 필터 결과 0개)" if args.baselines else ""))
 
     win_vals   = _parse_list(args.win,   int)
     k_vals     = _parse_list(args.k,     float)
@@ -264,7 +293,7 @@ def main():
             print(f"[2_fsm] {det}: " + ", ".join(parts))
             print(f"[2_fsm] 총 조합: {total_valid}개", end="")
             if total_invalid:
-                print(f"  (무효 skip: {total_invalid}개 -- quiet7 win<=7)", end="")
+                print(f"  (무효 skip: {total_invalid}개 -- quiet7 win<=7 / cusum k<=1)", end="")
             print()
         else:
             print(f"[2_fsm] out_parent : {out_parent}")
@@ -304,7 +333,7 @@ def main():
     print(f"[2_fsm] detector={det}  조합 {total_valid}개  실행 {len(run_items)}개")
     print(f"[2_fsm] out_parent : {out_parent}")
     if total_invalid:
-        print(f"[2_fsm] 무효 skip: {total_invalid}개 (quiet7 win<=7)")
+        print(f"[2_fsm] 무효 skip: {total_invalid}개 (quiet7 win<=7 / cusum k<=1)")
     if total_resume:
         print(f"[2_fsm] resume skip: {total_resume}개")
 
