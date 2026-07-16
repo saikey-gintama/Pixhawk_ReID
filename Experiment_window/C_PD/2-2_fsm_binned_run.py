@@ -37,6 +37,14 @@ geo(lat/lon) -> coords_igrf.dipole_maglat() -> |maglat| bin 판정
       --win 10,30 --k 5,10 --onset 0.5 --peak 2.0
   python 2-2_fsm_binned_run.py run --detector metop03 --limit 2
 
+병렬 실행 (2_fsm_run.py와 동일):
+  --jobs N (기본 1) : bin별 조합 실행을 N개 워커로 동시 실행. 기본값(1)에서는
+      실행 경로가 기존과 완전히 동일. N>1일 때만 워커 풀 사용 -- 서브프로세스
+      stdout/stderr를 캡처했다가 해당 조합이 끝나는 시점에 한 덩어리로 그대로
+      출력(내용/포맷 무변경, resume/성공-실패 카운트 로직도 무변경).
+  --stagger-sec S (기본 0) : --jobs>1일 때 서브프로세스 launch 최소 간격[sec].
+  python 2-2_fsm_binned_run.py run --detector metop03 --jobs 4 --stagger-sec 0.5
+
 출력 트리 (runtag는 bin 정보를 포함하지 않음 -- 폴더 계층이 bin을 담당,
 기존 3_event/4_summarize의 runtag 파서와 호환 유지 목적):
   {detector}_output/2-2_fsm_binned/bin_60_70/<runtag>/fsm_onset_<runtag>.csv
@@ -52,6 +60,9 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import product
 from pathlib import Path
 
@@ -295,6 +306,30 @@ def _parse_bins_select(spec: str) -> list[tuple[float, float]]:
     return out
 
 
+# ── --jobs>1 병렬 실행 (기본 --jobs 1 경로는 절대 안 거침, 2_fsm_run.py와 동일) ──
+_launch_lock = threading.Lock()
+_last_launch = [0.0]
+
+
+def _stagger_wait(stagger_sec: float) -> None:
+    """연속 서브프로세스 launch 사이 최소 간격 보장 (--stagger-sec, HDD 동시 로드 경합 완화)."""
+    if stagger_sec <= 0:
+        return
+    with _launch_lock:
+        now = time.monotonic()
+        wait = _last_launch[0] + stagger_sec - now
+        if wait > 0:
+            time.sleep(wait)
+        _last_launch[0] = time.monotonic()
+
+
+def _run_one_captured(cmd: list[str], stagger_sec: float) -> tuple[int, bytes]:
+    """subprocess stdout+stderr를 합쳐 raw bytes로 캡처(인코딩 왕복 없이 그대로 보존)."""
+    _stagger_wait(stagger_sec)
+    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    return res.returncode, res.stdout
+
+
 # ══════════════════════════════════════════════════════════════════════
 # build
 # ══════════════════════════════════════════════════════════════════════
@@ -496,16 +531,38 @@ def cmd_run(args):
 
         n_ok = n_fail = 0
         try:
-            for script, combo, runtag, onset_csv in run_items:
-                combo_str = "  ".join(f"{k}={v}" for k, v in combo.items()) if combo else "(default)"
-                print(f"  >>> {script.name}  {combo_str}")
-                cmd = _build_cmd(script, det, cache_path, out_parent, combo)
-                res = subprocess.run(cmd, check=False)
-                if res.returncode == 0:
-                    n_ok += 1
-                else:
-                    n_fail += 1
-                    print(f"  !! 실패 (returncode={res.returncode}): {script.name} {combo_str}")
+            if args.jobs <= 1:
+                for script, combo, runtag, onset_csv in run_items:
+                    combo_str = "  ".join(f"{k}={v}" for k, v in combo.items()) if combo else "(default)"
+                    print(f"  >>> {script.name}  {combo_str}")
+                    cmd = _build_cmd(script, det, cache_path, out_parent, combo)
+                    res = subprocess.run(cmd, check=False)
+                    if res.returncode == 0:
+                        n_ok += 1
+                    else:
+                        n_fail += 1
+                        print(f"  !! 실패 (returncode={res.returncode}): {script.name} {combo_str}")
+            else:
+                with ThreadPoolExecutor(max_workers=args.jobs) as ex:
+                    futures = {}
+                    for script, combo, runtag, onset_csv in run_items:
+                        combo_str = ("  ".join(f"{k}={v}" for k, v in combo.items())
+                                    if combo else "(default)")
+                        cmd = _build_cmd(script, det, cache_path, out_parent, combo)
+                        fut = ex.submit(_run_one_captured, cmd, args.stagger_sec)
+                        futures[fut] = (script.name, combo_str)
+                    for fut in as_completed(futures):
+                        sname, combo_str = futures[fut]
+                        returncode, output = fut.result()
+                        print(f"  >>> {sname}  {combo_str}")
+                        sys.stdout.flush()
+                        sys.stdout.buffer.write(output)
+                        sys.stdout.buffer.flush()
+                        if returncode == 0:
+                            n_ok += 1
+                        else:
+                            n_fail += 1
+                            print(f"  !! 실패 (returncode={returncode}): {sname} {combo_str}")
         except Exception as e:
             print(f"  !! {name} 처리 중 예외 발생, 다음 bin으로 진행: {e}")
 
@@ -549,6 +606,12 @@ def main():
     ap_r.add_argument("--dry",   action="store_true", help="bin/조합/호출 수와 예시 명령만 출력")
     ap_r.add_argument("--limit", type=int, default=0, metavar="N",
                       help="bin당 앞에서 N개만 실행 (0=무제한, 메커니즘 검증용)")
+    ap_r.add_argument("--jobs", type=int, default=1, metavar="N",
+                      help="bin당 병렬 실행 워커 수 (기본 1 = 기존과 동일한 순차 실행). "
+                           "N>1일 때만 워커 풀 사용")
+    ap_r.add_argument("--stagger-sec", type=float, default=0.0, metavar="S",
+                      help="--jobs>1일 때 서브프로세스 시작 최소 간격[sec] "
+                           "(HDD 동시 parquet 로드 경합 완화, 기본 0)")
     ap_r.set_defaults(func=cmd_run)
 
     args = ap.parse_args()

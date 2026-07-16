@@ -29,16 +29,30 @@ Sweep:
   --limit : 앞에서 N개만 실행 (0=무제한, 메커니즘 검증용).
   resume  : sweep 모드에서 runtag 출력폴더 존재 시 skip.
 
+병렬 실행:
+  --jobs N (기본 1) : N개 워커로 동시 실행. 기본값(1)에서는 실행 경로가
+      기존과 완전히 동일(순차 subprocess.run, 출력 그대로 스트리밍).
+      N>1일 때만 워커 풀 사용 -- 각 서브프로세스의 stdout/stderr를 캡처했다가
+      해당 조합이 끝나는 시점에 한 덩어리로 그대로 출력(내용/포맷 무변경,
+      조합 간 인터리빙만 방지).
+  --stagger-sec S (기본 0) : --jobs>1일 때 서브프로세스 launch 사이 최소
+      간격[sec]. HDD에서 동시 parquet 로드 경합 완화용.
+
 사용:
   python 2_fsm_run.py --detector gk2a [--dry]
   python 2_fsm_run.py --detector gk2a \\
       --win 1,3,5,7,10,15,30 --onset 0,0.1,0.3,0.5,0.7,1.0 \\
       --peak 0,0.5,1.0,2.0,3.0 --k 0,1,3,5,7,10,15,20 [--dry] [--limit 10]
+  python 2_fsm_run.py --detector metop03 --win 10,30 --k 5,10 \\
+      --jobs 4 --stagger-sec 0.5
 """
 from __future__ import annotations
 import argparse
 import subprocess
 import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import product
 from pathlib import Path
 
@@ -229,6 +243,49 @@ def _fsm_dir(detector: str) -> Path:
     return _GK2A_FSM_DIR if detector == "gk2a" else _POES_FSM_DIR
 
 
+# ── --jobs>1 병렬 실행 (기본 --jobs 1 경로는 절대 안 거침) ──────────────────
+_launch_lock = threading.Lock()
+_last_launch = [0.0]
+
+
+def _stagger_wait(stagger_sec: float) -> None:
+    """연속 서브프로세스 launch 사이 최소 간격 보장 (--stagger-sec, HDD 동시 로드 경합 완화)."""
+    if stagger_sec <= 0:
+        return
+    with _launch_lock:
+        now = time.monotonic()
+        wait = _last_launch[0] + stagger_sec - now
+        if wait > 0:
+            time.sleep(wait)
+        _last_launch[0] = time.monotonic()
+
+
+def _run_one_captured(cmd: list[str], stagger_sec: float) -> bytes:
+    """subprocess stdout+stderr를 합쳐 raw bytes로 캡처(인코딩 왕복 없이 그대로 보존)."""
+    _stagger_wait(stagger_sec)
+    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    return res.stdout
+
+
+def _run_items_parallel(run_items: list[tuple[str, dict, list[str]]],
+                        jobs: int, stagger_sec: float) -> None:
+    """--jobs>1: 워커 풀로 동시 실행. 조합별 출력은 완료 시점에 한 덩어리로
+    방출(내용/포맷 무변경 -- 조합 간 인터리빙만 방지, 헤더 print문은 순차 경로와 동일)."""
+    with ThreadPoolExecutor(max_workers=jobs) as ex:
+        futures = {}
+        for name, combo, cmd in run_items:
+            combo_str = "  ".join(f"{k}={v}" for k, v in combo.items()) if combo else "(default)"
+            fut = ex.submit(_run_one_captured, cmd, stagger_sec)
+            futures[fut] = (name, combo_str)
+        for fut in as_completed(futures):
+            name, combo_str = futures[fut]
+            output = fut.result()
+            print(f"\n>>> {name}  {combo_str}")
+            sys.stdout.flush()
+            sys.stdout.buffer.write(output)
+            sys.stdout.buffer.flush()
+
+
 def main():
     ap = argparse.ArgumentParser(description="통합 FSM 실행 러너 (sweep 지원)")
     ap.add_argument("--detector", required=True, choices=["gk2a", "metop03", "noaa19"])
@@ -245,6 +302,11 @@ def main():
                     help="k 값 콤마 리스트.      예) 0,1,3,5,7,10,15,20")
     ap.add_argument("--baselines", default=None, metavar="LIST",
                     help="baseline 필터 콤마 리스트 (예: quietoff,cusum). 미지정=전체(기존 동작)")
+    ap.add_argument("--jobs", type=int, default=1, metavar="N",
+                    help="병렬 실행 워커 수 (기본 1 = 기존과 동일한 순차 실행). N>1일 때만 워커 풀 사용")
+    ap.add_argument("--stagger-sec", type=float, default=0.0, metavar="S",
+                    help="--jobs>1일 때 서브프로세스 시작 최소 간격[sec] "
+                         "(HDD 동시 parquet 로드 경합 완화, 기본 0)")
     args = ap.parse_args()
 
     det        = args.detector
@@ -337,10 +399,13 @@ def main():
     if total_resume:
         print(f"[2_fsm] resume skip: {total_resume}개")
 
-    for name, combo, cmd in run_items:
-        combo_str = "  ".join(f"{k}={v}" for k, v in combo.items()) if combo else "(default)"
-        print(f"\n>>> {name}  {combo_str}")
-        subprocess.run(cmd, check=False)
+    if args.jobs <= 1:
+        for name, combo, cmd in run_items:
+            combo_str = "  ".join(f"{k}={v}" for k, v in combo.items()) if combo else "(default)"
+            print(f"\n>>> {name}  {combo_str}")
+            subprocess.run(cmd, check=False)
+    else:
+        _run_items_parallel(run_items, args.jobs, args.stagger_sec)
 
     print("\n[2_fsm] 완료.")
 
