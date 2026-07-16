@@ -19,7 +19,7 @@ raw count와 겹쳐 눈으로 검증하는 진단 스크립트. "롤링배경이
   빨강 점선   : threshold(t) = bg_median + k*MAD  (onset_floor=0 기본, 순수 공식)
   주황 세로선 : FSM onset (창 안, 라이브로 detect_segments 재계산)
   빨강 세로선 : FSM peak (사전계산 fsm_event_*.csv 있으면만 — --peak 지정 시)
-  옅은 초록 음영: NOAA 카탈로그 이벤트 begin~max_time
+  옅은 초록 음영: --catalog 이벤트 카탈로그(기본 noaa)의 이벤트 begin~max_time
   옅은 주황 음영: SAA 구간 (|B|<25000nT)
 
 사용:
@@ -27,6 +27,7 @@ raw count와 겹쳐 눈으로 검증하는 진단 스크립트. "롤링배경이
   python diag_rolling_threshold_poes.py \
       --channel-params "pro_tel0_p5:w10k3,omni_p7:w1k7" --top-events 3
   python diag_rolling_threshold_poes.py --channels pro_tel0_p5 --w 10 --k 3 --all-events
+  python diag_rolling_threshold_poes.py --detector metop03 --catalog swpc --channels omni_p7 --top-events 3
 """
 from __future__ import annotations
 import argparse
@@ -56,7 +57,12 @@ _FSM_ROOT = {
     "metop03": HERE / "POES" / "MetOp03_count" / "metop03_output" / "2_fsm",
     "noaa19":  HERE / "POES" / "NOAA19_count"  / "noaa19_output"  / "2_fsm",
 }
-_NOAA_CATALOG = HERE / "NOAA_GOES" / "noaa_goes_spe_cache_parquet"
+# 값은 4_summarize.py의 _CATALOG와 동일 (사전 조사로 두 카탈로그 모두
+# index=begin_time, columns에 max_time/max_pfu 존재 확인 -- 폴백 불필요).
+_CATALOG = {
+    "noaa": (HERE / "NOAA_GOES"  / "noaa_goes_spe_cache_parquet", "noaa_goes_spe_io"),
+    "swpc": (HERE / "SWPC_Alert" / "swpc_espe_cache_parquet",     "swpc_alert_espe_io"),
+}
 
 _DEFAULT_OUT = HERE / "diag_output"
 
@@ -104,9 +110,10 @@ def _load_saa_mask(io, cache_dir: str) -> pd.Series | None:
     return (geo["Bmag"] < fsm_engine.SAA_BMAG_NT).fillna(False)
 
 
-def _load_catalog() -> pd.DataFrame:
-    io = core._import_event_io("noaa_goes_spe_io", str(_NOAA_CATALOG))
-    cat_all, _ = io.load(str(_NOAA_CATALOG))
+def _load_catalog(catalog: str) -> pd.DataFrame:
+    cache_dir, io_name = _CATALOG[catalog]
+    io = core._import_event_io(io_name, str(cache_dir))
+    cat_all, _ = io.load(str(cache_dir))
     return io.filter_by_date(cat_all, *core.ERA)
 
 
@@ -127,7 +134,7 @@ def _find_peak_times(detector: str, channel: str, w: int, k: float,
 def plot_one(channel: str, cnt: pd.Series, bg: pd.DataFrame, thr: pd.Series,
             onset_times: list, peak_times: list, saa_mask: pd.Series | None,
             event_begin, event_max_time, event_pfu, t0, t1, out_path: Path,
-            w: float, k: float):
+            w: float, k: float, detector: str, catalog: str):
     win = cnt.loc[t0:t1]
     bwin = bg.loc[t0:t1]
     twin = thr.loc[t0:t1]
@@ -147,7 +154,7 @@ def plot_one(channel: str, cnt: pd.Series, bg: pd.DataFrame, thr: pd.Series,
                    label="FSM peak" if i == 0 else None)
 
     ax.axvspan(event_begin, event_max_time, color="green", alpha=0.15, zorder=1,
-              label=f"NOAA catalog (pfu={event_pfu:.0f})")
+              label=f"{catalog.upper()} catalog (pfu={event_pfu:.0f})")
 
     if saa_mask is not None:
         swin = saa_mask.loc[t0:t1] if not saa_mask.loc[t0:t1].empty else saa_mask.reindex([]).astype(bool)
@@ -157,7 +164,8 @@ def plot_one(channel: str, cnt: pd.Series, bg: pd.DataFrame, thr: pd.Series,
 
     ax.set_ylabel("count rate [15-min mean]", fontsize=9)
     ax.set_yscale("log")
-    ax.set_title(f"{channel}  w={w} k={k}  event={event_begin:%Y-%m-%d} pfu={event_pfu:.0f}",
+    ax.set_title(f"{channel}  detector={detector} catalog={catalog}  "
+                f"w={w} k={k}  event={event_begin:%Y-%m-%d} pfu={event_pfu:.0f}",
                 fontsize=10)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
     ax.grid(True, alpha=0.3)
@@ -169,20 +177,20 @@ def plot_one(channel: str, cnt: pd.Series, bg: pd.DataFrame, thr: pd.Series,
     print(f"[diag] saved -> {out_path}")
 
 
-def run(detector: str, channel_params: dict[str, tuple[float, float]],
+def run(detector: str, catalog: str, channel_params: dict[str, tuple[float, float]],
        onset_floor: float, peak_floor: float | None, pad_days: float,
        top_events: int, all_events: bool, out_dir: Path):
     io_name, cache_dir = _POES_IO[detector]
     io = core._import_event_io(io_name, str(cache_dir))
 
-    cat = _load_catalog()
+    cat = _load_catalog(catalog)
     if all_events:
         print(f"[diag] --all-events: 카탈로그 {len(cat)}개 전부 -> "
               f"채널당 그림 {len(cat)}장, 총 {len(cat) * len(channel_params)}장 생성 예정 (경고)")
         events = cat.sort_values("max_pfu", ascending=False)
     else:
         events = cat.sort_values("max_pfu", ascending=False).head(top_events)
-    print(f"[diag] detector={detector}  이벤트 {len(events)}개 선택 "
+    print(f"[diag] detector={detector} catalog={catalog}  이벤트 {len(events)}개 선택 "
           f"(pfu범위 {events['max_pfu'].min():.0f}~{events['max_pfu'].max():.0f})")
 
     saa_mask = _load_saa_mask(io, str(cache_dir))
@@ -209,9 +217,10 @@ def run(detector: str, channel_params: dict[str, tuple[float, float]],
             if cnt.loc[t0:t1].empty:
                 print(f"[diag] {channel} {begin.date()}: 창 안에 count 없음 -> skip")
                 continue
-            out_path = out_dir / f"{channel}_{begin:%Y%m%d}.png"
+            out_path = out_dir / f"{detector}_{catalog}_{channel}_{begin:%Y%m%d}.png"
             plot_one(channel, cnt, bg, thr, onset_times, peak_times, saa_mask,
-                    begin, row["max_time"], row["max_pfu"], t0, t1, out_path, w, k)
+                    begin, row["max_time"], row["max_pfu"], t0, t1, out_path, w, k,
+                    detector, catalog)
             saved.append(out_path)
 
     print(f"\n[diag] 완료: {len(saved)}장 저장 -> {out_dir}")
@@ -222,6 +231,9 @@ def main():
     ap = argparse.ArgumentParser(
         description="POES quietoff_mad 롤링 배경 임계값 시각 검증 진단 스크립트")
     ap.add_argument("--detector", default="metop03", choices=list(_POES_IO))
+    ap.add_argument("--catalog", default="noaa", choices=list(_CATALOG),
+                    help="이벤트 카탈로그: noaa(양성자 SPE) 또는 swpc(>2MeV 전자 경보) "
+                         "(기본 noaa)")
     ap.add_argument("--channels", default="pro_tel0_p5,omni_p7",
                     help="콤마 리스트 (기본 pro_tel0_p5,omni_p7)")
     ap.add_argument("--w", type=int, default=30, help="채널 공통 window[day] (기본 30)")
@@ -245,7 +257,7 @@ def main():
     channels = [c.strip() for c in args.channels.split(",") if c.strip()]
     channel_params = _parse_channel_params(channels, args.w, args.k, args.channel_params)
 
-    run(args.detector, channel_params, args.onset, args.peak, args.pad_days,
+    run(args.detector, args.catalog, channel_params, args.onset, args.peak, args.pad_days,
        args.top_events, args.all_events, Path(args.out))
 
 
