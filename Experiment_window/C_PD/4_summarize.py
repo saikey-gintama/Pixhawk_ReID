@@ -123,6 +123,7 @@ def build_master_table(detectors: list[str], catalogs: list[str],
         n_total = len(runtag_dirs)
         n_done = 0
         n_dup = 0
+        n_missing_csv = 0
         seen: set[tuple] = set()
         # detector 고정 채널 유니버스 (count 캐시 기준) — --baselines를 뭘로 제한해도 불변.
         channel_universe = _channel_universe(detector)
@@ -141,10 +142,15 @@ def build_master_table(detectors: list[str], catalogs: list[str],
             if key in seen:
                 n_dup += 1
                 continue
-            seen.add(key)
             csv = d / f"fsm_onset_{d.name}.csv"
             if not csv.exists():
+                # key를 seen에 등록하지 않는다 -- 폴더만 있고 CSV가 없는 FSM 크래시
+                # 잔재가 dedup 키를 먼저 선점하면, peak만 다른 정상 runtag가 같은
+                # 키로 오인되어 skip되고 그 조합 전체가 master_table에서 조용히
+                # 유실된다.
+                n_missing_csv += 1
                 continue
+            seen.add(key)
             for catalog in catalogs:
                 tbl = core.sweep_table(csv, cat_cache[catalog], tol)
                 buffered.append((parsed, catalog, tbl))
@@ -153,8 +159,11 @@ def build_master_table(detectors: list[str], catalogs: list[str],
                 print(f"[4_summarize] {detector}: {n_done}개 조합 처리 중 "
                       f"({n_total}개 폴더 중 {n_dup}개 peak-중복 skip)")
         print(f"[4_summarize] {detector}: 총 {n_total}개 폴더 -> "
-              f"{n_done}개 고유 조합 처리, {n_dup}개 peak-중복 skip  "
-              f"(채널 유니버스 {len(channel_universe)}개)")
+              f"{n_done}개 고유 조합 처리, {n_dup}개 peak-중복 skip, "
+              f"{n_missing_csv}개 CSV 없음  (채널 유니버스 {len(channel_universe)}개)")
+        if n_missing_csv:
+            print(f"[4_summarize] WARNING: fsm_onset CSV 없는 runtag 폴더 {n_missing_csv}개 "
+                  f"-> FSM 크래시 잔재 의심, 해당 폴더 확인 필요")
 
         # 2차 패스: 실제 행 + 검출 0인 채널의 명시적 행(POD=0.0, FAR=NaN) 방출.
         for parsed, catalog, tbl in buffered:

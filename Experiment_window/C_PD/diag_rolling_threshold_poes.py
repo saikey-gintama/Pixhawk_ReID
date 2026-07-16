@@ -231,14 +231,14 @@ def main():
     ap.add_argument("--onset", type=float, default=0.0,
                     help="onset_floor 하한 클립 (기본 0=순수 bg_median+k*MAD)")
     ap.add_argument("--peak", type=float, default=None,
-                    help="peak_floor — 지정하면 사전계산 fsm_event_*.csv에서 "
+                    help="peak_floor -- 지정하면 사전계산 fsm_event_*.csv에서 "
                          "peak_time을 찾아 빨강 세로선으로 표시 (없으면 생략)")
     ap.add_argument("--pad-days", type=float, default=10.0,
                     help="이벤트 begin 전후 표시 범위[day] (기본 10)")
     ap.add_argument("--top-events", type=int, default=5,
                     help="PFU 상위 N개 이벤트만 (기본 5)")
     ap.add_argument("--all-events", action="store_true",
-                    help="카탈로그 전체 이벤트 (42개) — 그림 수 폭발 경고 출력")
+                    help="카탈로그 전체 이벤트 (42개) -- 그림 수 폭발 경고 출력")
     ap.add_argument("--out", default=str(_DEFAULT_OUT))
     args = ap.parse_args()
 

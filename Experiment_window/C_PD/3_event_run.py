@@ -132,9 +132,8 @@ def _dedup_peak_csvs(csvs: list[Path], kind: str, dedup: bool) -> tuple[list[Pat
 
 
 # ── resume (POES): out_dir/_done_events.txt 매니페스트 기반 ──────────────
-# 매처 종료코드 0인 CSV만 기록. 같은 out_dir로 재실행하면 기록된 CSV는 skip.
-# 기본 out_dir이 날짜 스탬프라 같은 날 재실행은 자동 이어짐; 다른 날 이어가려면
-# --out으로 기존 폴더를 지정할 것.
+# 기본 out_dir은 고정 경로({detector}_output/3_event/<catalog>_<kind>)이므로 같은
+# 명령을 재실행하면 자동으로 이어진다. 매처 종료코드 0인 CSV만 기록, --no-resume로 해제.
 _DONE_NAME = "_done_events.txt"
 
 
