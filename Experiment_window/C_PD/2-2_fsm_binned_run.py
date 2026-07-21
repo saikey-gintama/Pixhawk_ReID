@@ -18,6 +18,15 @@ POES count를 |자기위도(maglat)| bin별 미니 캐시로 쪼개고, bin마�
 geo(lat/lon) -> coords_igrf.dipole_maglat() -> |maglat| bin 판정
 (Bmag/IGRF 추가 계산 없음 -- diag_rolling_threshold_poes.py와 동일 방식 재사용).
 
+온보드 등가성: bin별 rolling 배경(quietoff/quiet7/cusum의 win 윈도)은 해당 bin의
+과거 샘플에만 의존한다 -- 다른 bin 샘플을 참조하지 않는다. 따라서 여기서 하는
+"위성 전체 시계열을 bin별로 미리 쪼갠 뒤 bin마다 배치로 FSM을 돌리는" 방식은,
+실제 온보드에서 샘플이 들어올 때마다 (1) IGRF로 maglat 계산 -> (2) 해당 bin으로
+라우팅 -> (3) 그 bin의 FSM 상태만 갱신 하는 스트리밍 처리와 수학적으로 동일한
+결과를 낸다 (bin 경계·윈도 정의가 같다면 두 처리 순서가 각 bin의 rolling 통계에
+주는 표본 집합이 동일하기 때문). 즉 이 스크립트는 온보드 구현의 지상 검증용
+재정식화(reformulation)이지, 근사가 아니다.
+
 서브커맨드:
   build : bin 미니 캐시 생성 (원본 캐시와 동일 파일 포맷 -- io 모듈 무수정으로 열림)
   run   : 빌드된 bin마다 2_fsm_run.py와 동일한 sweep 로직 실행
@@ -236,8 +245,12 @@ def _bin_name(lo: float, hi: float) -> str:
 
 
 def _bins_root(detector: str) -> Path:
+    """bin 캐시 루트 폴더명은 반드시 _cache_parquet로 끝나야 .gitignore(*_cache_parquet/)에
+    잡힌다 -- 원본 cache.name(예: poes_metop03_cache_parquet)의 _cache_parquet 접미사를
+    떼고 _mlatbins_cache_parquet를 붙인다 (예: poes_metop03_mlatbins_cache_parquet)."""
     _, cache = _POES_IO[detector]
-    return cache.parent / f"{cache.name}_mlatbins"
+    base = cache.name.removesuffix("_cache_parquet")
+    return cache.parent / f"{base}_mlatbins_cache_parquet"
 
 
 def _parse_channels_arg(io, spec: str | None):
