@@ -33,6 +33,11 @@ CSV 컬럼 스키마(ONSET_COLS/EVENT_COLS/GEO_COLS)는 quietoff와 100% 동일
 — _match_core_poes(매처)/4_summarize가 그대로 읽는다. threshold 컬럼은
 λ1[onset]=k·λ0[onset](호환용), bg_median은 λ0[onset](floor 클립 적용된 실사용값).
 
+세그먼트 병합(coalescing, --merge-gap-h 기본 3h): 즉시강제리셋(발산 방지 핵심)의
+대가로 실제로는 하나로 이어진 지속 이벤트가 리셋 직후 재상승마다 조각(fragment)
+나는 문제를, 검출 코어는 그대로 두고 출력 직전 후처리로 복원한다 —
+_coalesce_segments 참고. 같은 트랙(quiet/SAA) 안에서만 병합.
+
 사용:
   python fsm_count_spe_cusum_poes.py --io poes_metop03_io \
       --cache MetOp03_count/poes_metop03_cache_parquet \
@@ -67,6 +72,7 @@ K              = 3.0       # λ1 = k·λ0 (event/background 배수)
 H              = 5.0       # CUSUM 결정 임계
 LAMBDA0_FLOOR  = 0.01      # λ0 하한 클립 (15min 리샘플 count 스케일)
 MAX_GAP_H      = 2.0       # warning 진행 중 인접 유효샘플 gap 상한 -> 넘으면 warning 무효화
+MERGE_GAP_H    = 3.0       # 같은 트랙 인접 세그먼트 병합 gap 상한[h] (검출 코어 무변경, 출력 후처리 전용)
 ONSET_FLOOR    = 0.5
 PEAK_FLOOR     = 2.0
 MIN_PTS_PER_CHANNEL = 100
@@ -103,6 +109,9 @@ def parse_args():
                    help="λ0(배경률) 하한 클립 (기본 0.01)")
     p.add_argument("--max-gap-h", type=float, default=MAX_GAP_H,
                    help="warning 중 인접 유효샘플 gap 상한[h] -> 넘으면 warning 무효화 (기본 2)")
+    p.add_argument("--merge-gap-h", type=float, default=MERGE_GAP_H,
+                   help="출력 후처리: 같은 트랙에서 next.onset_time - prev.end_time 이 이 값[h] "
+                        "미만이면 인접 세그먼트를 병합 (검출 코어 무변경, 기본 3, 0=끔)")
     p.add_argument("--quiet-days", type=int, default=(BG_QUIET_DAYS if BG_QUIET_DAYS else 0))
     p.add_argument("--no-geo", action="store_true",
                    help="geo 태깅 생략(in_saa 없이). geo 캐시 없을 때.")
@@ -266,6 +275,42 @@ def detect_segments_cusum(cnt: pd.Series, bg: pd.DataFrame, k: float, h: float,
     return segs
 
 
+def _coalesce_segments(segs: list, cnt: pd.Series, merge_gap_h: float) -> list:
+    """같은 트랙 안 인접 세그먼트 병합 (검출 코어 무변경 — 출력 직전 후처리 전용).
+
+    detect_segments_cusum은 onset이 min_duration 확정되는 즉시 S=0으로 강제
+    리셋한다(발산 방지 핵심). 그 대가로 실제로는 하나로 이어진 지속 이벤트가
+    "리셋 직후 재상승"할 때마다 여러 조각(fragment)으로 쪼개져 나온다. 이 함수는
+    검출 로직을 건드리지 않고, 인접한 두 세그먼트의 next.onset_time -
+    prev.end_time 이 merge_gap_h[h] 미만이면 하나로 합쳐 조각을 이벤트급
+    duration으로 복원한다.
+
+    onset은 첫 세그먼트 값을 그대로 쓰고(진짜 onset 시점), end은 마지막 세그먼트
+    값, peak_time/peak_count는 병합된 [onset_time, end_time] 구간 전체에서
+    재계산(중간에 원래 조각 경계 밖이던 표본도 포함해야 진짜 peak를 못 놓친다),
+    bg_median/bg_sigma/threshold은 첫 세그먼트 값을 유지한다(그 배경에서 검출된
+    onset이라는 사실은 병합해도 안 변함).
+    """
+    if not segs or merge_gap_h <= 0:
+        return segs
+    segs = sorted(segs, key=lambda s: s["onset_time"])
+    merged = [dict(segs[0])]
+    for s in segs[1:]:
+        prev = merged[-1]
+        gap_h = (s["onset_time"] - prev["end_time"]).total_seconds() / 3600
+        if gap_h < merge_gap_h:
+            prev["end_time"]   = s["end_time"]
+            prev["end_count"]  = s["end_count"]
+            prev["duration_h"] = round((prev["end_time"] - prev["onset_time"]).total_seconds() / 3600, 2)
+            seg_cnt = cnt.loc[prev["onset_time"]:prev["end_time"]]
+            if not seg_cnt.empty:
+                prev["peak_time"]  = seg_cnt.idxmax()
+                prev["peak_count"] = round(float(seg_cnt.max()), 3)
+        else:
+            merged.append(dict(s))
+    return merged
+
+
 # ══════════════════════════════════════════════════════════════════
 # 입출력 어댑터 (POES 전용, quietoff_mad_poes.py 원본과 byte-identical)
 # ══════════════════════════════════════════════════════════════════
@@ -330,6 +375,7 @@ def main():
     peak_fl  = args.peak
     lam0_fl  = args.lambda0_floor
     max_gap  = args.max_gap_h
+    merge_gap = args.merge_gap_h
     quiet_d  = args.quiet_days if args.quiet_days > 0 else None
     runtag   = build_runtag(TAG, window, k, h, onset_fl, peak_fl)
 
@@ -373,14 +419,16 @@ def main():
         cnt_saa    = cnt[saa_bit]
 
         bg_quiet = compute_rolling_bg(cnt_quiet, window, quiet_d, BG_UPDATE_FREQ)
-        segs_quiet = detect_segments_cusum(cnt_quiet, bg_quiet, k, h, onset_fl,
-                                           MIN_SPE_DURATION_H, lam0_fl, max_gap)
+        segs_quiet_raw = detect_segments_cusum(cnt_quiet, bg_quiet, k, h, onset_fl,
+                                               MIN_SPE_DURATION_H, lam0_fl, max_gap)
+        segs_quiet = _coalesce_segments(segs_quiet_raw, cnt_quiet, merge_gap)
         if len(cnt_saa) >= MIN_PTS_PER_CHANNEL:
             bg_saa = compute_rolling_bg(cnt_saa, window, quiet_d, BG_UPDATE_FREQ)
-            segs_saa = detect_segments_cusum(cnt_saa, bg_saa, k, h, onset_fl,
-                                             MIN_SPE_DURATION_H, lam0_fl, max_gap)
+            segs_saa_raw = detect_segments_cusum(cnt_saa, bg_saa, k, h, onset_fl,
+                                                 MIN_SPE_DURATION_H, lam0_fl, max_gap)
+            segs_saa = _coalesce_segments(segs_saa_raw, cnt_saa, merge_gap)
         else:
-            segs_saa = []
+            segs_saa_raw, segs_saa = [], []
 
         segs = sorted(segs_quiet + segs_saa, key=lambda s: s["onset_time"])
         base = {"k": k, "onset_floor": onset_fl, "species": species,
@@ -392,8 +440,9 @@ def main():
         for s in passed:
             geo_tag = tag_onset_geo(s["onset_time"], geo)
             event_rows.append({**base, "peak_floor": peak_fl, **s, **geo_tag})
+        n_raw = len(segs_quiet_raw) + len(segs_saa_raw)
         print(f"    segs={len(segs)} (quiet={len(segs_quiet)} saa={len(segs_saa)})  "
-              f"peak>={peak_fl}: {len(passed)}")
+              f"raw(병합전)={n_raw} merge-gap-h={merge_gap}  peak>={peak_fl}: {len(passed)}")
 
     # 공통 컬럼(quietoff와 동일) + POES 전용 geo 태깅 컬럼 末尾
     GEO_COLS = ["in_saa", "onset_Bmag", "onset_maglat"]

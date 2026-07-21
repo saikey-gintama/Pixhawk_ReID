@@ -19,6 +19,10 @@ POES판의 이중트랙(SAA/non-SAA) 코드는 구조 그대로 유지하되 geo
 CSV 컬럼 스키마는 GK2A quietoff(fsm_count_spe_quietoff_mad.py)와 동일
 (POES판에만 있는 in_saa/onset_Bmag/onset_maglat GEO_COLS는 GK2A에 없음).
 
+세그먼트 병합(coalescing, --merge-gap-h 기본 3h): POES판과 byte-identical
+(_coalesce_segments) — 즉시강제리셋으로 조각난 지속 이벤트를 출력 직전
+후처리로 복원. 검출 코어는 무변경.
+
 사용:
   python fsm_count_spe_cusum.py --window 10 --k 3 --h 5 --onset 0.5 --peak 2
 """
@@ -62,6 +66,7 @@ K              = 3.0       # λ1 = k·λ0 (event/background 배수)
 H              = 5.0       # CUSUM 결정 임계
 LAMBDA0_FLOOR  = 0.01      # λ0 하한 클립 (15min 리샘플 count 스케일)
 MAX_GAP_H      = 2.0       # warning 진행 중 인접 유효샘플 gap 상한 -> 넘으면 warning 무효화
+MERGE_GAP_H    = 3.0       # 같은 트랙 인접 세그먼트 병합 gap 상한[h] (검출 코어 무변경, 출력 후처리 전용)
 ONSET_FLOOR    = 0.5
 PEAK_FLOOR     = 2.0
 MIN_PTS_PER_CHANNEL = 100
@@ -84,6 +89,9 @@ def parse_args():
                    help="λ0(배경률) 하한 클립 (기본 0.01)")
     p.add_argument("--max-gap-h", type=float, default=MAX_GAP_H,
                    help="warning 중 인접 유효샘플 gap 상한[h] -> 넘으면 warning 무효화 (기본 2)")
+    p.add_argument("--merge-gap-h", type=float, default=MERGE_GAP_H,
+                   help="출력 후처리: 같은 트랙에서 next.onset_time - prev.end_time 이 이 값[h] "
+                        "미만이면 인접 세그먼트를 병합 (검출 코어 무변경, 기본 3, 0=끔)")
     p.add_argument("--quiet-days", type=int, default=(BG_QUIET_DAYS if BG_QUIET_DAYS else 0))
     p.add_argument("--out", default=None, help="출력 루트 디렉터리 (기본: count_FSM/fsm2_output)")
     return p.parse_args()
@@ -237,6 +245,31 @@ def detect_segments_cusum(cnt: pd.Series, bg: pd.DataFrame, k: float, h: float,
     return segs
 
 
+def _coalesce_segments(segs: list, cnt: pd.Series, merge_gap_h: float) -> list:
+    """같은 트랙 안 인접 세그먼트 병합 (검출 코어 무변경 — 출력 직전 후처리 전용).
+    POES판(fsm_count_spe_cusum_poes.py) 원본과 byte-identical — 로직/주석은
+    그쪽 참고. GK2A는 SAA 트랙이 항상 빈 채로 퇴화하므로 quiet 트랙에만
+    실질적으로 적용된다."""
+    if not segs or merge_gap_h <= 0:
+        return segs
+    segs = sorted(segs, key=lambda s: s["onset_time"])
+    merged = [dict(segs[0])]
+    for s in segs[1:]:
+        prev = merged[-1]
+        gap_h = (s["onset_time"] - prev["end_time"]).total_seconds() / 3600
+        if gap_h < merge_gap_h:
+            prev["end_time"]   = s["end_time"]
+            prev["end_count"]  = s["end_count"]
+            prev["duration_h"] = round((prev["end_time"] - prev["onset_time"]).total_seconds() / 3600, 2)
+            seg_cnt = cnt.loc[prev["onset_time"]:prev["end_time"]]
+            if not seg_cnt.empty:
+                prev["peak_time"]  = seg_cnt.idxmax()
+                prev["peak_count"] = round(float(seg_cnt.max()), 3)
+        else:
+            merged.append(dict(s))
+    return merged
+
+
 def _saa_bit_series(cnt: pd.Series, geo) -> pd.Series:
     """POES판과 동일 시그니처 유지용. GK2A(GEO)는 SAA/Bmag 데이터가 없어 geo는
     항상 None -> 전부 False -> cnt_saa가 빈 시계열이 되어 이중트랙이 단일트랙
@@ -263,6 +296,7 @@ def main():
     peak_fl  = args.peak
     lam0_fl  = args.lambda0_floor
     max_gap  = args.max_gap_h
+    merge_gap = args.merge_gap_h
     quiet_d  = args.quiet_days if args.quiet_days > 0 else None
     runtag   = build_runtag(TAG, window, k, h, onset_fl, peak_fl)
     out_dir  = (Path(args.out) if args.out else FSM_OUTPUT_DIR) / runtag
@@ -296,14 +330,16 @@ def main():
                 cnt_saa   = cnt[saa_bit]
 
                 bg_quiet = compute_rolling_bg(cnt_quiet, window, quiet_d, BG_UPDATE_FREQ)
-                segs_quiet = detect_segments_cusum(cnt_quiet, bg_quiet, k, h, onset_fl,
-                                                   MIN_SPE_DURATION_H, lam0_fl, max_gap)
+                segs_quiet_raw = detect_segments_cusum(cnt_quiet, bg_quiet, k, h, onset_fl,
+                                                       MIN_SPE_DURATION_H, lam0_fl, max_gap)
+                segs_quiet = _coalesce_segments(segs_quiet_raw, cnt_quiet, merge_gap)
                 if len(cnt_saa) >= MIN_PTS_PER_CHANNEL:
                     bg_saa = compute_rolling_bg(cnt_saa, window, quiet_d, BG_UPDATE_FREQ)
-                    segs_saa = detect_segments_cusum(cnt_saa, bg_saa, k, h, onset_fl,
-                                                     MIN_SPE_DURATION_H, lam0_fl, max_gap)
+                    segs_saa_raw = detect_segments_cusum(cnt_saa, bg_saa, k, h, onset_fl,
+                                                         MIN_SPE_DURATION_H, lam0_fl, max_gap)
+                    segs_saa = _coalesce_segments(segs_saa_raw, cnt_saa, merge_gap)
                 else:
-                    segs_saa = []
+                    segs_saa_raw, segs_saa = [], []
 
                 segs = sorted(segs_quiet + segs_saa, key=lambda s: s["onset_time"])
                 base = {"k": k, "onset_floor": onset_fl, "pd_key": pd_key,
@@ -313,8 +349,9 @@ def main():
                 passed = [s for s in segs if s["peak_count"] >= peak_fl]
                 for s in passed:
                     event_rows.append({**base, "peak_floor": peak_fl, **s})
+                n_raw = len(segs_quiet_raw) + len(segs_saa_raw)
                 print(f"    segs={len(segs)} (quiet={len(segs_quiet)} saa={len(segs_saa)})  "
-                      f"peak>={peak_fl}: {len(passed)}")
+                      f"raw(병합전)={n_raw} merge-gap-h={merge_gap}  peak>={peak_fl}: {len(passed)}")
 
     ONSET_COLS = ["k","onset_floor","pd_key","side","logic","channel",
                   "onset_time","peak_time","end_time","onset_count","peak_count",
