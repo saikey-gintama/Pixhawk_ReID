@@ -1,21 +1,31 @@
 """
 4_summarize.py
 ==============
-detector(metop03/noaa19) x catalog(noaa/swpc) x baseline(blc1_fixed/blc1_lowe/quietoff)
-전체 조합의 2_fsm sweep runtag를 순회 매칭해서 POD/FAR을 하나의 master_table.csv로
-모으는 러너. _match_core_poes.sweep_table()/match_events()를 그대로 재사용한다.
+detector(gk2a/metop03/noaa19) x catalog(noaa/swpc) x baseline 전체 조합의 2_fsm
+sweep runtag를 순회 매칭해서 POD/FAR을 하나의 master_table.csv로 모으는 러너.
+_match_core_poes.sweep_table()/match_events()를 그대로 재사용한다 (onset CSV는
+peak_floor/in_saa 컬럼이 없어도 그대로 동작 -- GK2A는 애초에 이 두 컬럼이 없음).
 
 평가 대상: fsm_onset_<runtag>.csv (peak_floor 미사용 = 정답 기준).
 
-runtag 폴더명 4종 (2_fsm_run.py 산출):
+runtag 폴더명 (2_fsm_run.py 산출, baseline 컬럼 값은 폴더명 접두사 그대로):
   blc1_fixed_const_on{onset}_pk{peak}
   blc1_lowe_w{win}_m{mult}_on{onset}_pk{peak}     (mult는 k_or_mult 컬럼에 기록)
   quietoff_mad_w{win}_k{k}_on{onset}_pk{peak}
-  cusum_w{win}_k{k}_h{h}_on{onset}_pk{peak}       (h는 신규 컬럼, 다른 3종은 NaN)
+  cusum_w{win}_k{k}_h{h}_on{onset}_pk{peak}       (h는 신규 컬럼, 다른 baseline은 NaN)
+  quiet7_mad_w{win}_k{k}_on{onset}_pk{peak}       (GK2A 전용)
+  quiet7_std_w{win}_k{k}_on{onset}_pk{peak}       (GK2A 전용)
+  quietoff_std_w{win}_k{k}_on{onset}_pk{peak}     (GK2A 전용 -- POES는 quietoff_mad만 있음)
+
+detector별 catalog 매칭 기간(era)이 다름 -- GK2A(KSEM_ERA 2019~2024)는 POES(ERA
+2019~2025)보다 1년 짧다. 같은 catalog라도 detector별로 자기 era로 필터링된 카탈로그와
+매칭한다(공유 카탈로그를 그대로 쓰면 GK2A가 존재할 수 없는 2025년 이벤트까지
+"놓친 이벤트"로 잡혀 POD가 부당하게 낮아짐).
 
 사용:
   python 4_summarize.py --detectors metop03,noaa19 --catalogs noaa,swpc
   python 4_summarize.py --detectors metop03 --baselines quietoff --out custom/master_table.csv
+  python 4_summarize.py --detectors gk2a --baselines quietoff,quiet7_mad,quiet7_std,quietoff_std
 
 NOAA19은 2_fsm sweep이 아직 진행 중일 수 있음 — 존재하는 runtag 폴더만 처리하고
 없는 조합은 그냥 skip한다 (에러 아님). sweep 완료 후 재실행하면 됨.
@@ -34,9 +44,12 @@ import pandas as pd
 HERE = Path(__file__).resolve().parent  # C_PD/
 sys.path.insert(0, str(HERE / "POES" / "event_MATCHER"))
 import _match_core_poes as core  # match_events, sweep_table, MATCH_TOL_H, ERA, _import_event_io
+sys.path.insert(0, str(HERE / "GK2A" / "event_MATCHER"))
+import _match_core as gk2a_core  # KSEM_ERA (GK2A는 POES보다 매칭 기간이 1년 짧음)
 
 # ── match-root: detector별 2_fsm 표준 출력 폴더 (2_fsm_run.py의 _OUT_DIR과 동일) ──
 _MATCH_ROOT = {
+    "gk2a":    HERE / "GK2A" / "KSEM_count"    / "gk2a_output"    / "2_fsm",
     "metop03": HERE / "POES" / "MetOp03_count" / "metop03_output" / "2_fsm",
     "noaa19":  HERE / "POES" / "NOAA19_count"  / "noaa19_output"  / "2_fsm",
 }
@@ -46,22 +59,39 @@ _CATALOG = {
     "swpc": (HERE / "SWPC_Alert" / "swpc_espe_cache_parquet",     "swpc_alert_espe_io"),
 }
 
-# detector count 캐시 (io 모듈명, 캐시 parquet 경로) — 채널 유니버스 확정용
+# detector별 catalog 매칭 기간 -- GK2A는 KSEM_ERA(1년 짧음), POES 2종은 기존 ERA 공유.
+_ERA_BY_DETECTOR = {
+    "gk2a":    gk2a_core.KSEM_ERA,
+    "metop03": core.ERA,
+    "noaa19":  core.ERA,
+}
+
+# detector count 캐시 (io 모듈명, 캐시 parquet 경로) — 채널 유니버스 확정용 (POES 2종만;
+# GK2A는 컬럼이 tuple이어도 tuple_to_fname이 없어 별도 분기 -- _channel_universe 참고)
 _POES_IO = {
     "metop03": ("poes_metop03_io", HERE / "POES" / "MetOp03_count" / "poes_metop03_cache_parquet"),
     "noaa19":  ("poes_noaa19_io",  HERE / "POES" / "NOAA19_count"  / "poes_noaa19_cache_parquet"),
 }
+_GK2A_COUNT_CACHE = HERE / "GK2A" / "KSEM_count" / "ksem_cache_parquet"
 
 _DEFAULT_OUT = HERE / "POES" / "summarize_output" / "master_table.csv"
 
 _RUNTAG_RE = {
-    "blc1_fixed": re.compile(r"^blc1_fixed_const_on(?P<onset>[\d.]+)_pk(?P<peak>[\d.]+)$"),
-    "blc1_lowe":  re.compile(r"^blc1_lowe_w(?P<win>[\d.]+)_m(?P<mult>[\d.]+)"
-                             r"_on(?P<onset>[\d.]+)_pk(?P<peak>[\d.]+)$"),
-    "quietoff":   re.compile(r"^quietoff_mad_w(?P<win>[\d.]+)_k(?P<k>[\d.]+)"
-                             r"_on(?P<onset>[\d.]+)_pk(?P<peak>[\d.]+)$"),
-    "cusum":      re.compile(r"^cusum_w(?P<win>\d+)_k(?P<k>[\d.]+)_h(?P<h>[\d.]+)"
-                             r"_on(?P<onset>[\d.]+)_pk(?P<peak>[\d.]+)$"),
+    "blc1_fixed":   re.compile(r"^blc1_fixed_const_on(?P<onset>[\d.]+)_pk(?P<peak>[\d.]+)$"),
+    "blc1_lowe":    re.compile(r"^blc1_lowe_w(?P<win>[\d.]+)_m(?P<mult>[\d.]+)"
+                               r"_on(?P<onset>[\d.]+)_pk(?P<peak>[\d.]+)$"),
+    "quietoff":     re.compile(r"^quietoff_mad_w(?P<win>[\d.]+)_k(?P<k>[\d.]+)"
+                               r"_on(?P<onset>[\d.]+)_pk(?P<peak>[\d.]+)$"),
+    "cusum":        re.compile(r"^cusum_w(?P<win>\d+)_k(?P<k>[\d.]+)_h(?P<h>[\d.]+)"
+                               r"_on(?P<onset>[\d.]+)_pk(?P<peak>[\d.]+)$"),
+    # GK2A 전용 (POES에는 이 3종 FSM 스크립트 자체가 없음) -- 실물 폴더명 확인 후 추가:
+    # quiet7_mad_w10_k0_on0.1_pk0 / quiet7_std_w10_k0_on0.1_pk0 / quietoff_std_w10_k0_on0.1_pk0
+    "quiet7_mad":   re.compile(r"^quiet7_mad_w(?P<win>[\d.]+)_k(?P<k>[\d.]+)"
+                               r"_on(?P<onset>[\d.]+)_pk(?P<peak>[\d.]+)$"),
+    "quiet7_std":   re.compile(r"^quiet7_std_w(?P<win>[\d.]+)_k(?P<k>[\d.]+)"
+                               r"_on(?P<onset>[\d.]+)_pk(?P<peak>[\d.]+)$"),
+    "quietoff_std": re.compile(r"^quietoff_std_w(?P<win>[\d.]+)_k(?P<k>[\d.]+)"
+                               r"_on(?P<onset>[\d.]+)_pk(?P<peak>[\d.]+)$"),
 }
 
 
@@ -89,16 +119,25 @@ def _nan_key(v: float):
     return None if isinstance(v, float) and math.isnan(v) else v
 
 
-def _load_catalog(catalog: str) -> pd.DataFrame:
+def _load_catalog(catalog: str, era: tuple[str, str]) -> pd.DataFrame:
     cache_dir, io_name = _CATALOG[catalog]
     io = core._import_event_io(io_name, str(cache_dir))
     cat_all, _ = io.load(str(cache_dir))
-    return io.filter_by_date(cat_all, *core.ERA)
+    return io.filter_by_date(cat_all, *era)
 
 
 def _channel_universe(detector: str) -> set[str]:
     """detector의 count 캐시(전체 telemetry 채널)에서 채널 유니버스를 읽는다.
-    baseline/sweep 결과와 무관한 고정값 — 어떤 --baselines로 돌려도 동일해야 함."""
+    baseline/sweep 결과와 무관한 고정값 — 어떤 --baselines로 돌려도 동일해야 함.
+    GK2A는 컬럼이 (pd_key,side,logic) 튜플이지만 ksem_io엔 POES식 tuple_to_fname이
+    없어 "PD1A-OU" 형식(=FSM 출력 channel 컬럼과 동일, 실측 확인됨)으로 직접 조합한다.
+    logic="TRASH"는 품질 플래그일 뿐 FSM이 검출 채널로 쓰지 않아 제외(실측: 54개 중
+    6개 제외 -> 48개, 실제 fsm_onset CSV의 고유 channel 수 48개와 일치 확인됨)."""
+    if detector == "gk2a":
+        io = core._import_event_io("ksem_io", str(_GK2A_COUNT_CACHE))
+        df, _ = io.load(str(_GK2A_COUNT_CACHE))
+        return {f"{pd_key}{side}-{logic}" for pd_key, side, logic in df.columns
+               if logic != "TRASH"}
     io_name, cache_dir = _POES_IO[detector]
     io = core._import_event_io(io_name, str(cache_dir))
     df, _ = io.load(str(cache_dir))
@@ -110,20 +149,31 @@ def build_master_table(detectors: list[str], catalogs: list[str],
     """fsm_onset_*.csv 전용. peak-dedup(아래 seen 키)이 걸려 있어 event CSV(peak_floor
     유효)를 처리하는 함수로 확장/재사용하려면 이 dedup부터 제거해야 함 — 그대로 쓰면
     peak별로 달라야 할 event 행이 하나로 뭉개짐."""
-    cat_cache = {}
-    for catalog in catalogs:
-        cat_cache[catalog] = _load_catalog(catalog)
-        print(f"[4_summarize] catalog={catalog}  {len(cat_cache[catalog])}개 이벤트 로드 "
-              f"({core.ERA[0]}~{core.ERA[1]})")
+    # catalog는 detector별 era(_ERA_BY_DETECTOR)로 다르게 필터링해야 하므로
+    # (catalog, era) 키로 캐시 -- GK2A/POES가 같은 catalog를 요청해도 각자의
+    # era로 별도 로드됨.
+    cat_cache: dict[tuple[str, tuple], pd.DataFrame] = {}
+
+    def _get_cat(catalog: str, era: tuple[str, str]) -> pd.DataFrame:
+        key = (catalog, era)
+        if key not in cat_cache:
+            cat_cache[key] = _load_catalog(catalog, era)
+            print(f"[4_summarize] catalog={catalog} era={era[0]}~{era[1]}  "
+                  f"{len(cat_cache[key])}개 이벤트 로드")
+        return cat_cache[key]
 
     rows = []
     for detector in detectors:
+        era = _ERA_BY_DETECTOR[detector]
         root = _MATCH_ROOT[detector]
         runtag_dirs = sorted(d for d in root.iterdir() if d.is_dir()) if root.exists() else []
         n_total = len(runtag_dirs)
         n_done = 0
         n_dup = 0
         n_missing_csv = 0
+        n_unparsed = 0
+        unparsed_examples: list[str] = []
+        n_baseline_filtered = 0
         seen: set[tuple] = set()
         # detector 고정 채널 유니버스 (count 캐시 기준) — --baselines를 뭘로 제한해도 불변.
         channel_universe = _channel_universe(detector)
@@ -131,11 +181,19 @@ def build_master_table(detectors: list[str], catalogs: list[str],
         buffered: list[tuple[dict, str, pd.DataFrame]] = []
         for d in runtag_dirs:
             parsed = _parse_runtag(d.name)
-            if parsed is None or parsed["baseline"] not in baselines:
+            if parsed is None:
+                # 조용한 skip 금지 -- 알려진 4+3종 baseline 어디에도 안 맞는 runtag는
+                # 미지의 형식(오타/신규 FSM/수동 폴더)일 수 있어 항상 카운트+예시 보존.
+                n_unparsed += 1
+                if len(unparsed_examples) < 5:
+                    unparsed_examples.append(d.name)
+                continue
+            if parsed["baseline"] not in baselines:
+                n_baseline_filtered += 1  # 정상 파싱됐지만 --baselines 필터로 제외 (의도된 skip)
                 continue
             # onset 전용 dedup (검증: peak만 다른 fsm_onset_*.csv는 byte-identical,
             # cusum도 GK2A로 md5 확인함). event CSV는 peak_floor가 실제 축이라 이
-            # 스킵을 적용하면 안 됨. h는 cusum 전용 축 — 다른 3종은 항상 NaN이라
+            # 스킵을 적용하면 안 됨. h는 cusum 전용 축 — 다른 baseline은 항상 NaN이라
             # 키에 포함해도 기존 baseline들의 dedup 동작에는 영향 없음.
             key = (parsed["baseline"], _nan_key(parsed["win"]),
                   _nan_key(parsed["k_or_mult"]), _nan_key(parsed["h"]), parsed["onset"])
@@ -152,7 +210,7 @@ def build_master_table(detectors: list[str], catalogs: list[str],
                 continue
             seen.add(key)
             for catalog in catalogs:
-                tbl = core.sweep_table(csv, cat_cache[catalog], tol)
+                tbl = core.sweep_table(csv, _get_cat(catalog, era), tol)
                 buffered.append((parsed, catalog, tbl))
             n_done += 1
             if n_done % 100 == 0:
@@ -160,10 +218,15 @@ def build_master_table(detectors: list[str], catalogs: list[str],
                       f"({n_total}개 폴더 중 {n_dup}개 peak-중복 skip)")
         print(f"[4_summarize] {detector}: 총 {n_total}개 폴더 -> "
               f"{n_done}개 고유 조합 처리, {n_dup}개 peak-중복 skip, "
-              f"{n_missing_csv}개 CSV 없음  (채널 유니버스 {len(channel_universe)}개)")
+              f"{n_missing_csv}개 CSV 없음, {n_baseline_filtered}개 --baselines 필터 제외, "
+              f"{n_unparsed}개 파싱 실패  (채널 유니버스 {len(channel_universe)}개)")
         if n_missing_csv:
             print(f"[4_summarize] WARNING: fsm_onset CSV 없는 runtag 폴더 {n_missing_csv}개 "
                   f"-> FSM 크래시 잔재 의심, 해당 폴더 확인 필요")
+        if n_unparsed:
+            print(f"[4_summarize] WARNING: {detector} 파싱 실패 runtag {n_unparsed}개 "
+                  f"-> 알려진 baseline 패턴 미매칭(예시: {unparsed_examples}) -- "
+                  f"_RUNTAG_RE에 패턴 추가 필요할 수 있음")
 
         # 2차 패스: 실제 행 + 검출 0인 채널의 명시적 행(POD=0.0, FAR=NaN) 방출.
         for parsed, catalog, tbl in buffered:
@@ -301,14 +364,17 @@ def _print_anchor_highlight(best_df: pd.DataFrame):
 
 def main():
     ap = argparse.ArgumentParser(
-        description="POES sweep runtag 순회 매칭 -> master_table.csv")
+        description="detector(gk2a/POES) sweep runtag 순회 매칭 -> master_table.csv")
     ap.add_argument("--detectors", default="metop03,noaa19",
-                    help="콤마 리스트. 선택: metop03, noaa19")
+                    help="콤마 리스트. 선택: gk2a, metop03, noaa19 "
+                         "(gk2a는 기본값에 없음 — 명시적으로 추가해야 포함됨)")
     ap.add_argument("--catalogs",  default="noaa,swpc",
                     help="콤마 리스트. 선택: noaa, swpc")
     ap.add_argument("--baselines", default="blc1_fixed,blc1_lowe,quietoff",
-                    help="콤마 리스트. 선택: blc1_fixed, blc1_lowe, quietoff, cusum "
-                         "(cusum은 기본값에 없음 — 명시적으로 추가해야 포함됨)")
+                    help="콤마 리스트. 선택: blc1_fixed, blc1_lowe, quietoff, cusum, "
+                         "quiet7_mad, quiet7_std, quietoff_std (cusum과 GK2A 전용 3종은 "
+                         "기본값에 없음 — 명시적으로 추가해야 포함됨. quiet7_mad/quiet7_std/"
+                         "quietoff_std는 POES엔 해당 FSM이 없어 실질적으로 GK2A 전용)")
     ap.add_argument("--tol", type=float, default=core.MATCH_TOL_H)
     ap.add_argument("--out", default=str(_DEFAULT_OUT))
     ap.add_argument("--master-in", default=None,
