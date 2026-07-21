@@ -17,6 +17,14 @@ runtag 폴더명 (2_fsm_run.py 산출, baseline 컬럼 값은 폴더명 접두�
   quiet7_std_w{win}_k{k}_on{onset}_pk{peak}       (GK2A 전용)
   quietoff_std_w{win}_k{k}_on{onset}_pk{peak}     (GK2A 전용 -- POES는 quietoff_mad만 있음)
 
+  quietoff/cusum은 2-2_fsm_binned_run.py(POES 조건부배경/condbg 판인
+  fsm_count_spe_{cusum,quietoff}_condbg_poes.py 등록 러너)의 mlb 토큰도
+  선택적으로 붙는다: quietoff_mad_mlb15-30-45-60-75_w{win}_k{k}_on..,
+  cusum_mlb15-30-45-60-75_w{win}_k{k}_h{h}_on.. -- mlb 토큰이 있으면 그 값
+  그대로(예: "15-30-45-60-75") maglat_bins 컬럼에 기록, 없으면 NaN(=시간순
+  배경). 나머지 4계열(blc1_*, quiet7_*, quietoff_std)은 condbg 판이 아직
+  없어 파싱 무변경.
+
 detector별 catalog 매칭 기간(era)이 다름 -- GK2A(KSEM_ERA 2019~2024)는 POES(ERA
 2019~2025)보다 1년 짧다. 같은 catalog라도 detector별로 자기 era로 필터링된 카탈로그와
 매칭한다(공유 카탈로그를 그대로 쓰면 GK2A가 존재할 수 없는 2025년 이벤트까지
@@ -74,15 +82,15 @@ _POES_IO = {
 }
 _GK2A_COUNT_CACHE = HERE / "GK2A" / "KSEM_count" / "ksem_cache_parquet"
 
-_DEFAULT_OUT = HERE / "POES" / "summarize_output" / "master_table.csv"
+_DEFAULT_OUT = HERE / "4_summary" / "master_table.csv"
 
 _RUNTAG_RE = {
     "blc1_fixed":   re.compile(r"^blc1_fixed_const_on(?P<onset>[\d.]+)_pk(?P<peak>[\d.]+)$"),
     "blc1_lowe":    re.compile(r"^blc1_lowe_w(?P<win>[\d.]+)_m(?P<mult>[\d.]+)"
                                r"_on(?P<onset>[\d.]+)_pk(?P<peak>[\d.]+)$"),
-    "quietoff":     re.compile(r"^quietoff_mad_w(?P<win>[\d.]+)_k(?P<k>[\d.]+)"
+    "quietoff":     re.compile(r"^quietoff_mad(?:_mlb(?P<mlb>[\d.\-]+))?_w(?P<win>[\d.]+)_k(?P<k>[\d.]+)"
                                r"_on(?P<onset>[\d.]+)_pk(?P<peak>[\d.]+)$"),
-    "cusum":        re.compile(r"^cusum_w(?P<win>\d+)_k(?P<k>[\d.]+)_h(?P<h>[\d.]+)"
+    "cusum":        re.compile(r"^cusum(?:_mlb(?P<mlb>[\d.\-]+))?_w(?P<win>\d+)_k(?P<k>[\d.]+)_h(?P<h>[\d.]+)"
                                r"_on(?P<onset>[\d.]+)_pk(?P<peak>[\d.]+)$"),
     # GK2A 전용 (POES에는 이 3종 FSM 스크립트 자체가 없음) -- 실물 폴더명 확인 후 추가:
     # quiet7_mad_w10_k0_on0.1_pk0 / quiet7_std_w10_k0_on0.1_pk0 / quietoff_std_w10_k0_on0.1_pk0
@@ -96,20 +104,23 @@ _RUNTAG_RE = {
 
 
 def _parse_runtag(runtag: str) -> dict | None:
-    """runtag 폴더명 -> {baseline, win, k_or_mult, h, onset, peak}. 매칭 실패 시 None.
-    h는 cusum 전용 신규 필드 — 다른 3종은 항상 NaN(기존 파싱 로직 불변)."""
+    """runtag 폴더명 -> {baseline, win, k_or_mult, h, onset, peak, maglat_bins}. 매칭
+    실패 시 None. h는 cusum 전용 신규 필드, maglat_bins는 quietoff/cusum의 mlb
+    토큰 전용 신규 필드 — 나머지는 항상 NaN(기존 파싱 로직 불변)."""
     for baseline, pat in _RUNTAG_RE.items():
         m = pat.match(runtag)
         if not m:
             continue
         g = m.groupdict()
+        mlb = g.get("mlb")
         return {
-            "baseline":  baseline,
-            "win":       float(g["win"]) if "win" in g else float("nan"),
-            "k_or_mult": float(g["k"] if "k" in g else g.get("mult", "nan")),
-            "h":         float(g["h"]) if "h" in g else float("nan"),
-            "onset":     float(g["onset"]),
-            "peak":      float(g["peak"]),
+            "baseline":     baseline,
+            "win":          float(g["win"]) if "win" in g else float("nan"),
+            "k_or_mult":    float(g["k"] if "k" in g else g.get("mult", "nan")),
+            "h":            float(g["h"]) if "h" in g else float("nan"),
+            "onset":        float(g["onset"]),
+            "peak":         float(g["peak"]),
+            "maglat_bins":  mlb if mlb else float("nan"),
         }
     return None
 
@@ -193,10 +204,14 @@ def build_master_table(detectors: list[str], catalogs: list[str],
                 continue
             # onset 전용 dedup (검증: peak만 다른 fsm_onset_*.csv는 byte-identical,
             # cusum도 GK2A로 md5 확인함). event CSV는 peak_floor가 실제 축이라 이
-            # 스킵을 적용하면 안 됨. h는 cusum 전용 축 — 다른 baseline은 항상 NaN이라
-            # 키에 포함해도 기존 baseline들의 dedup 동작에는 영향 없음.
+            # 스킵을 적용하면 안 됨. h/maglat_bins는 cusum/quietoff-condbg 전용 축 —
+            # 다른 baseline은 항상 NaN이라 키에 포함해도 기존 dedup 동작엔 영향 없음.
+            # maglat_bins를 반드시 포함해야 함 -- 없으면 서로 다른 --maglat-bins로 돌린
+            # 두 condbg 실행이 (win,k,onset)만 같으면 "peak만 다른 중복"으로 오인되어
+            # 하나가 유실된다(실제로는 bin 경계가 달라 onset CSV 내용 자체가 다름).
             key = (parsed["baseline"], _nan_key(parsed["win"]),
-                  _nan_key(parsed["k_or_mult"]), _nan_key(parsed["h"]), parsed["onset"])
+                  _nan_key(parsed["k_or_mult"]), _nan_key(parsed["h"]), parsed["onset"],
+                  _nan_key(parsed["maglat_bins"]))
             if key in seen:
                 n_dup += 1
                 continue
@@ -237,6 +252,7 @@ def build_master_table(detectors: list[str], catalogs: list[str],
                     "baseline": parsed["baseline"],
                     "win": parsed["win"], "k_or_mult": parsed["k_or_mult"],
                     "h": parsed["h"], "onset": parsed["onset"],
+                    "maglat_bins": parsed["maglat_bins"],
                     "channel": row["channel"],
                     "POD": row["POD"], "FAR": row["FAR"],
                     "n_det": row["n_det"], "n_hit": row["n_hit"],
@@ -249,6 +265,7 @@ def build_master_table(detectors: list[str], catalogs: list[str],
                     "baseline": parsed["baseline"],
                     "win": parsed["win"], "k_or_mult": parsed["k_or_mult"],
                     "h": parsed["h"], "onset": parsed["onset"],
+                    "maglat_bins": parsed["maglat_bins"],
                     "channel": ch,
                     "POD": 0.0, "FAR": float("nan"),
                     "n_det": 0, "n_hit": 0,
@@ -389,6 +406,11 @@ def main():
                     help="best_table_by_criterion.csv 경로 (기본: --out과 같은 폴더)")
     ap.add_argument("--anchor-out", default=None,
                     help="anchor 채널(pro p4/p5) 리포트 경로 (기본: --out과 같은 폴더)")
+    ap.add_argument("--xlsx", action="store_true",
+                    help="master/best/best_by_criterion/anchor 4개를 시트로 묶은 "
+                         "summary.xlsx도 같이 저장")
+    ap.add_argument("--xlsx-out", default=None,
+                    help="summary.xlsx 경로 (기본: --out과 같은 폴더의 summary.xlsx)")
     args = ap.parse_args()
 
     detectors = [s.strip() for s in args.detectors.split(",") if s.strip()]
@@ -447,6 +469,17 @@ def main():
     print(f"[4_summarize] anchor 채널 리포트 저장 -> {anchor_out} ({len(anchor)} rows)")
     if not anchor.empty:
         print(anchor.to_string(index=False))
+
+    if args.xlsx:
+        xlsx_out = Path(args.xlsx_out) if args.xlsx_out else out.parent / "summary.xlsx"
+        xlsx_out.parent.mkdir(parents=True, exist_ok=True)
+        with pd.ExcelWriter(xlsx_out, engine="openpyxl") as writer:
+            df.to_excel(writer, sheet_name="master_table", index=False)
+            best.to_excel(writer, sheet_name="best_table", index=False)
+            best_all.to_excel(writer, sheet_name="best_table_by_criterion", index=False)
+            anchor.to_excel(writer, sheet_name="anchor_channels", index=False)
+        print(f"[4_summarize] summary.xlsx 저장 -> {xlsx_out} "
+              f"(4시트: master_table/best_table/best_table_by_criterion/anchor_channels)")
 
 
 if __name__ == "__main__":
