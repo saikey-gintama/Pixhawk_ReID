@@ -217,6 +217,8 @@ def run_one(events_csv, args, cat):
         plot_overlay(cnt, cat, det, f"{channel}  {name}",
                      outdir / f"overlay_{channel}_{name}.png", args.tol)
 
+    if not args.overlay:
+        return
     if args.count_dir:
         cdir = Path(args.count_dir)
         for channel in sorted(ev["channel"].unique()):
@@ -247,6 +249,9 @@ def main():
                     help="전 채널 overlay: count parquet 폴더")
     ap.add_argument("--count",   default=None, help="단일 채널 count parquet")
     ap.add_argument("--channel", default=None, help="단일 채널명 (예: PD3A-OU)")
+    ap.add_argument("--overlay", action="store_true",
+                    help="채널별 overlay PNG 생성 (기본: off -- scatter만 생성). "
+                         "--count-dir/--count 경로가 있어도 이 플래그 없이는 그리지 않음")
     ap.add_argument("--k",     type=int,   default=None,
                     help="[sweep 전용] FINAL k 지정 (단일조합 파일이면 불필요)")
     ap.add_argument("--onset", type=float, default=None,

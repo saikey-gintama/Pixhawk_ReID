@@ -87,6 +87,15 @@ def match_events(det: pd.DataFrame, cat: pd.DataFrame,
         fa = det[~det_matched]
         n_fa_saa = int((fa["in_saa"] == True).sum())
 
+    # FA/TP geo 분포 (onset_maglat/onset_Bmag) -- POES 전용, GK2A onset CSV엔
+    # 이 컬럼들이 없어 항상 빈 배열(=집계 시 NaN)로 통과한다.
+    fa_maglat = tp_maglat = fa_bmag = np.array([], dtype=float)
+    if "onset_maglat" in det.columns:
+        fa_maglat = det.loc[~det_matched, "onset_maglat"].dropna().to_numpy(dtype=float)
+        tp_maglat = det.loc[det_matched,  "onset_maglat"].dropna().to_numpy(dtype=float)
+    if "onset_Bmag" in det.columns:
+        fa_bmag = det.loc[~det_matched, "onset_Bmag"].dropna().to_numpy(dtype=float)
+
     pfu_pod = {}
     binned = pd.cut(cpfu, PFU_BINS, labels=PFU_LABELS, right=False)
     for lab in PFU_LABELS:
@@ -98,6 +107,7 @@ def match_events(det: pd.DataFrame, cat: pd.DataFrame,
         "pod": cat_hit.sum() / n_cat if n_cat else np.nan,
         "far": (~det_matched).sum() / n_det if n_det else np.nan,
         "n_hit": int(cat_hit.sum()), "n_fa": n_fa, "n_fa_saa": n_fa_saa,
+        "fa_maglat": fa_maglat, "tp_maglat": tp_maglat, "fa_bmag": fa_bmag,
         "pfu_pod": pfu_pod,
         "onset_diff_h": np.array(onset_diff),
         "peak_diff_h":  np.array(peak_diff),
@@ -124,12 +134,18 @@ def sweep_table(events_csv: Path, cat: pd.DataFrame,
         r  = match_events(grp, cat, tol_h)
         od = r["onset_diff_h"]
         n_fa = r["n_fa"]; n_fa_saa = r["n_fa_saa"]
+        fa_maglat = r["fa_maglat"]; tp_maglat = r["tp_maglat"]; fa_bmag = r["fa_bmag"]
         row = {
             "channel": ch, "k": k, "onset_floor": onf, "peak_floor": pkf,
             "n_det": r["n_det"], "n_hit": r["n_hit"], "n_fa": n_fa,
             "n_fa_saa": n_fa_saa,
             "n_fa_saa_frac": round(n_fa_saa / n_fa, 3)
                 if (np.isfinite(n_fa_saa) and n_fa > 0) else np.nan,
+            "fa_maglat_median": round(float(np.median(fa_maglat)), 2) if fa_maglat.size else np.nan,
+            "fa_maglat_p10":    round(float(np.percentile(fa_maglat, 10)), 2) if fa_maglat.size else np.nan,
+            "fa_maglat_p90":    round(float(np.percentile(fa_maglat, 90)), 2) if fa_maglat.size else np.nan,
+            "tp_maglat_median": round(float(np.median(tp_maglat)), 2) if tp_maglat.size else np.nan,
+            "fa_bmag_median":   round(float(np.median(fa_bmag)), 2) if fa_bmag.size else np.nan,
             "POD": round(r["pod"], 3), "FAR": round(r["far"], 3),
             "onset_diff_med_h":  round(float(np.median(od)), 2) if len(od) else np.nan,
             "onset_diff_mean_h": round(float(np.mean(od)),   2) if len(od) else np.nan,

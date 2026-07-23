@@ -257,6 +257,11 @@ def build_master_table(detectors: list[str], catalogs: list[str],
                     "POD": row["POD"], "FAR": row["FAR"],
                     "n_det": row["n_det"], "n_hit": row["n_hit"],
                     "n_fa": row["n_fa"], "n_fa_saa": row["n_fa_saa"],
+                    "fa_maglat_median": row["fa_maglat_median"],
+                    "fa_maglat_p10": row["fa_maglat_p10"],
+                    "fa_maglat_p90": row["fa_maglat_p90"],
+                    "tp_maglat_median": row["tp_maglat_median"],
+                    "fa_bmag_median": row["fa_bmag_median"],
                     "detected": True,
                 })
             for ch in sorted(channel_universe - present):
@@ -270,6 +275,11 @@ def build_master_table(detectors: list[str], catalogs: list[str],
                     "POD": 0.0, "FAR": float("nan"),
                     "n_det": 0, "n_hit": 0,
                     "n_fa": 0, "n_fa_saa": float("nan"),
+                    "fa_maglat_median": float("nan"),
+                    "fa_maglat_p10": float("nan"),
+                    "fa_maglat_p90": float("nan"),
+                    "tp_maglat_median": float("nan"),
+                    "fa_bmag_median": float("nan"),
                     "detected": False,
                 })
 

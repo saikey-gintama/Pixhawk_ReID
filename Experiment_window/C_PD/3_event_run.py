@@ -190,16 +190,24 @@ def _mark_skipped(out_dir: Path, csv: Path, min_count: int, limit: int) -> None:
         f.write(f"{csv.resolve()}\tmin={min_count}\tlimit={limit}\n")
 
 
-def _match_script_and_extra_args(detector: str, catalog: str) -> tuple[Path, list[str]]:
+def _match_script_and_extra_args(detector: str, catalog: str,
+                                 overlay: bool = False) -> tuple[Path, list[str]]:
     """detector별 매처 스크립트 경로와 고정 추가 인자.
-    GK2A 매처(--count-dir로 전 채널 overlay)와 POES 매처(--spe-io로 카탈로그
-    io 모듈 지정)는 부가 인자만 다르고 --events/--catalog/--out 인터페이스는
-    동일 -- GK2A 매처는 원래 --events(단일 CSV)도 지원해서 스크립트 변경 없이
-    바로 개별 호출로 전환 가능.
+    GK2A 매처(--count-dir로 전 채널 overlay 위치 지정)와 POES 매처(--spe-io로
+    카탈로그 io 모듈 지정)는 부가 인자만 다르고 --events/--catalog/--out
+    인터페이스는 동일 -- GK2A 매처는 원래 --events(단일 CSV)도 지원해서 스크립트
+    변경 없이 바로 개별 호출로 전환 가능.
+    overlay=True면 GK2A 호출에 --overlay를 얹어 채널별 overlay PNG도 생성한다
+    (기본 False -- --count-dir가 있어도 매처가 --overlay 없이는 그리지 않으므로
+    3_event_run은 기본적으로 no-overlay로 넘긴다). POES는 애초에 overlay 인자가
+    없어(원래도 항상 off) 영향 없음.
     """
     if detector == "gk2a":
         script = _NOAA_MATCH if catalog == "noaa" else _SWPC_MATCH
-        return script, ["--count-dir", str(_GK2A_COUNT)]
+        extra = ["--count-dir", str(_GK2A_COUNT)]
+        if overlay:
+            extra.append("--overlay")
+        return script, extra
     io_path = _NOAA_IO if catalog == "noaa" else _SWPC_IO
     script  = _NOAA_MATCH_P if catalog == "noaa" else _SWPC_MATCH_P
     return script, ["--spe-io", str(io_path)]
@@ -207,10 +215,11 @@ def _match_script_and_extra_args(detector: str, catalog: str) -> tuple[Path, lis
 
 def build_match_cmds(detector: str, catalog: str, kind: str,
                      fsm_dir: Path, out_dir: Path,
-                     dedup: bool = True) -> tuple[list[tuple[Path, list[str]]], int]:
+                     dedup: bool = True, overlay: bool = False
+                     ) -> tuple[list[tuple[Path, list[str]]], int]:
     """(csv경로, 명령) 쌍 리스트와 peak-중복 skip 수 반환. detector 무관 공통 빌더
     -- GK2A/POES 모두 fsm_dir/**fsm_<kind>_*.csv 를 glob 후 CSV마다 개별 호출."""
-    script, extra_args = _match_script_and_extra_args(detector, catalog)
+    script, extra_args = _match_script_and_extra_args(detector, catalog, overlay)
     cat_path = _NOAA_CAT if catalog == "noaa" else _SWPC_CAT
     csvs     = sorted(fsm_dir.rglob(f"fsm_{kind}_*.csv")) if fsm_dir.exists() else []
     csvs, n_dup = _dedup_peak_csvs(csvs, kind, dedup, fsm_dir)
@@ -251,6 +260,9 @@ def main():
                          "초과하면(=전채널 구조적 과검출) 매칭 생략 후 "
                          "out_dir/_skipped_events.txt에 기록 (min 기준 -- 한 채널이라도 "
                          "기준 이하면 통과). 기본 1000, 0=가드 해제")
+    ap.add_argument("--overlay", action="store_true",
+                    help="GK2A 매칭 시 채널별 overlay PNG도 생성 (기본: off -- "
+                         "scatter 1장만). POES는 원래 overlay가 없어 영향 없음")
     args = ap.parse_args()
 
     fsm_dir = Path(args.fsm_dir) if args.fsm_dir else _default_fsm_dir(args.detector)
@@ -275,7 +287,8 @@ def main():
             raise SystemExit(f"[3_event] ERROR: {msg}")
 
     cmds, n_dup = build_match_cmds(args.detector, args.catalog, args.kind,
-                                   fsm_dir, out_dir, dedup=not args.no_dedup)
+                                   fsm_dir, out_dir, dedup=not args.no_dedup,
+                                   overlay=args.overlay)
     if not cmds:
         script, _ = _match_script_and_extra_args(args.detector, args.catalog)
         print(f"[3_event] WARNING: fsm_{args.kind}_*.csv 없음 -> {fsm_dir}")
