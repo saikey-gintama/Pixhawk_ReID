@@ -37,6 +37,12 @@ detector별 catalog 매칭 기간(era)이 다름 -- GK2A(KSEM_ERA 2019~2024)는 
 
 NOAA19은 2_fsm sweep이 아직 진행 중일 수 있음 — 존재하는 runtag 폴더만 처리하고
 없는 조합은 그냥 skip한다 (에러 아님). sweep 완료 후 재실행하면 됨.
+
+--out 미지정 시 기본 경로는 4_summary/<catalogs 태그>/master_table.csv (예:
+--catalogs noaa -> 4_summary/noaa/, --catalogs noaa,swpc -> 4_summary/noaa_swpc/)
+-- 다른 --catalogs 조합끼리 같은 파일을 덮어쓰지 않도록 자동 분리된다. 기본
+경로에 이미 결과가 있으면 중단(경고) -- 덮어쓰려면 --force. --out을 명시하면
+그 경로를 그대로 쓰고 이 보호검사는 생략(사용자 책임).
 """
 from __future__ import annotations
 import argparse
@@ -82,7 +88,17 @@ _POES_IO = {
 }
 _GK2A_COUNT_CACHE = HERE / "GK2A" / "KSEM_count" / "ksem_cache_parquet"
 
-_DEFAULT_OUT = HERE / "4_summary" / "master_table.csv"
+_DEFAULT_OUT_ROOT = HERE / "4_summary"
+
+
+def _default_out(catalogs: list[str]) -> Path:
+    """--out 미지정 시 기본 master_table.csv 경로. catalogs 조합을 폴더명에
+    태그로 넣어(정렬 후 "_" join, 예: noaa / swpc / noaa_swpc) 서로 다른
+    --catalogs 실행이 같은 파일을 덮어쓰지 않게 한다 -- 예전엔 --catalogs
+    noaa 뒤에 --catalogs swpc를 돌리면 같은 4_summary/master_table.csv를
+    그대로 덮어써서 noaa 결과가 통째로 사라지는 사고가 있었음."""
+    tag = "_".join(sorted(catalogs))
+    return _DEFAULT_OUT_ROOT / tag / "master_table.csv"
 
 _RUNTAG_RE = {
     "blc1_fixed":   re.compile(r"^blc1_fixed_const_on(?P<onset>[\d.]+)_pk(?P<peak>[\d.]+)$"),
@@ -403,7 +419,14 @@ def main():
                          "기본값에 없음 — 명시적으로 추가해야 포함됨. quiet7_mad/quiet7_std/"
                          "quietoff_std는 POES엔 해당 FSM이 없어 실질적으로 GK2A 전용)")
     ap.add_argument("--tol", type=float, default=core.MATCH_TOL_H)
-    ap.add_argument("--out", default=str(_DEFAULT_OUT))
+    ap.add_argument("--out", default=None,
+                    help="master_table.csv 경로 (기본: 4_summary/<catalogs 태그>/"
+                         "master_table.csv -- --catalogs 조합별로 자동 분리돼 다른 "
+                         "조합의 결과를 덮어쓰지 않음. 명시 시 그 경로 그대로 사용하고 "
+                         "아래 덮어쓰기 보호검사는 생략 -- 사용자 책임)")
+    ap.add_argument("--force", action="store_true",
+                    help="기본 경로(--out 미지정)에 이미 master_table.csv가 있어도 "
+                         "덮어쓰기 허용 (--out을 명시하면 항상 통과이므로 무관)")
     ap.add_argument("--master-in", default=None,
                     help="master_table.csv를 새로 만들지 않고 기존 파일을 재사용")
     ap.add_argument("--criterion", default="min_far", choices=CRITERIA,
@@ -440,12 +463,22 @@ def main():
             raise SystemExit(f"[4_summarize] ERROR: unknown baseline '{b}' "
                              f"(choices: {list(_RUNTAG_RE)})")
 
-    out = Path(args.out)
+    out_explicit = args.out is not None
+    out = Path(args.out) if out_explicit else _default_out(catalogs)
     t0 = time.time()
     if args.master_in:
         df = pd.read_csv(args.master_in)
         print(f"[4_summarize] master_table 로드 <- {args.master_in} ({len(df)} rows)")
     else:
+        # 기본 경로(--out 미지정)에서만 덮어쓰기 보호 -- --catalogs 조합별로
+        # 폴더가 이미 분리돼 있어(_default_out) 정상적으로는 안 겹치지만, 같은
+        # 조합을 그대로 재실행하는 경우까지 실수로 덮어쓰지 않도록 막는다.
+        # --out 명시 시엔 3_event_run.py와 동일 원칙으로 사용자 책임 -- 검사 생략.
+        if not out_explicit and out.exists() and not args.force:
+            raise SystemExit(
+                f"[4_summarize] ERROR: 출력 파일이 이미 있습니다 -> {out}\n"
+                f"  다른 --catalogs 조합 결과를 덮어쓸 위험이 있어 중단합니다. "
+                f"덮어쓰려면 --force, 다른 경로로 저장하려면 --out을 지정하세요.")
         df = build_master_table(detectors, catalogs, baselines, args.tol)
         out.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(out, index=False)
