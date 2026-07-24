@@ -62,7 +62,7 @@ HERE = Path(__file__).resolve().parent  # C_PD/
 sys.path.insert(0, str(HERE / "POES"))
 sys.path.insert(0, str(HERE / "POES" / "event_MATCHER"))
 sys.path.insert(0, str(HERE / "POES" / "count_FSM"))
-import coords_igrf                                    # dipole_maglat (극관 밴드용, 좌표만)
+import _coords_igrf as coords_igrf                    # dipole_maglat (극관 밴드용, 좌표만)
 import _match_core_poes as core                      # _load_count_channel, _import_event_io
 import fsm_count_spe_quietoff_mad_poes as fsm_engine  # 롤링 배경 엔진 (byte-identical to KSEM)
 

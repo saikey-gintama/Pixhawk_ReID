@@ -1,6 +1,6 @@
 """
-coords_igrf.py
-==============
+_coords_igrf.py
+===============
 POES geo(lat/lon/alt) → IGRF |B| (nT) 와 dipole 자기위도(maglat, deg) 산출.
 
 poes_metop03_io 의 geo 채널은 alt/lat/lon 뿐이라 Bmag/maglat 이 없다.
@@ -93,7 +93,7 @@ def add_bmag_maglat(geo_rs: pd.DataFrame,
             b = _bmag_for_month(lat[sel], lon[sel], alt[sel], date)
             bmag[np.where(sel)[0]] = b
         except Exception as e:  # IGRF 실패 시 그 달만 NaN
-            print(f"[coords_igrf] WARN {period}: {e}")
+            print(f"[_coords_igrf] WARN {period}: {e}")
     out["Bmag"] = bmag
     return out
 
