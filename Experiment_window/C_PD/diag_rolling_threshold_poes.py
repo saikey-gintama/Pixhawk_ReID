@@ -56,7 +56,10 @@ POES 카탈로그 이벤트 vs raw count 프리커서를 눈으로 검사하는 
   python diag_rolling_threshold_poes.py --fsm w1k7 --onset 0 --channels pro_tel0_p5 \
       --mode detect --detect-verdict fp --detect-maglat=-40,-10
 
-  # --hist -- condbg maglat bin 경계 결정용 히스토그램 + CSV + 콘솔 15도균등 vs 대안경계 비교표
+  # --hist -- condbg maglat bin 경계 결정용. --hist-bounds 없이 분포(히스토그램+CSV)만 먼저 보고,
+  # 경계를 정한 뒤 --hist-bounds로 15도균등 vs 대안경계 콘솔 비교표를 추가로 본다.
+  python diag_rolling_threshold_poes.py --fsm w1k7 --onset 0 --channels pro_tel0_p5 \
+      --top-events 0 --hist
   python diag_rolling_threshold_poes.py --fsm w1k7 --onset 0 --channels pro_tel0_p5 \
       --top-events 0 --hist --hist-bounds=-90,-60,-30,0,30,60,90
 """
@@ -479,12 +482,14 @@ def _bin_table(tp_lat: np.ndarray, fp_lat: np.ndarray, edges) -> pd.DataFrame:
 
 def plot_hist(channel: str, onset_maglat: np.ndarray, onset_verdict: np.ndarray,
              onset_Bmag: np.ndarray, detector: str, catalog: str, w: int, k: float,
-             hist_bounds: list[float], out_dir: Path) -> None:
+             hist_bounds: list[float] | None, out_dir: Path) -> None:
     """condbg maglat bin 경계 결정용 (--hist).
     그림1: TP/FP onset_maglat 5도 히스토그램 겹쳐그리기 (부호 유지 -90~90).
     그림2: FP onset_Bmag 히스토그램 + SAA 임계선(25000nT).
     CSV: 5도 bin별 (bin_lo,bin_hi,tp_count,fp_count).
-    콘솔: 15도 균등 bin vs --hist-bounds(대안 경계) TP/FP 수·비율 비교표."""
+    hist_bounds=None(=--hist만 지정) -> 여기까지만, 콘솔 비교표는 생략
+    (경계를 정하기 전에 분포부터 보는 1차 단계용 -- 경계 없이는 비교할 대상이 없음).
+    hist_bounds 지정(--hist-bounds) -> 콘솔에 15도 균등 bin vs 대안 경계 비교표 추가."""
     verdict = onset_verdict.astype(bool)
     tp_lat = onset_maglat[verdict]
     fp_lat = onset_maglat[~verdict]
@@ -534,6 +539,9 @@ def plot_hist(channel: str, onset_maglat: np.ndarray, onset_verdict: np.ndarray,
     csv_path = out_dir / f"hist_maglat_{tag}.csv"
     df_bin.to_csv(csv_path, index=False)
     print(f"[diag] hist csv -> {csv_path}")
+
+    if hist_bounds is None:
+        return
 
     edges15 = np.arange(-90, 91, 15)
     print(f"\n[diag] {channel} maglat bin 비교 (TP n={tp_lat.size}, FP n={fp_lat.size}):")
@@ -729,11 +737,13 @@ def main():
                          '옵션으로 오인식하므로 --detect-maglat=-40,-10 처럼 "="로 붙여쓸 것.')
     ap.add_argument("--hist", action="store_true",
                     help="condbg maglat bin 경계 결정용 히스토그램(TP/FP onset_maglat 5도 + "
-                         "FP onset_Bmag) + CSV + 콘솔 bin 비교표 출력 (--fsm 지정 시에만 유효, "
-                         "--hist-bounds 필수).")
+                         "FP onset_Bmag) + CSV 출력 (--fsm 지정 시에만 유효). "
+                         "--hist-bounds 없이도 동작(분포 관찰용, 콘솔 비교표만 생략); "
+                         "--hist-bounds 지정 시 콘솔에 15도 균등 bin과의 비교표 추가.")
     ap.add_argument("--hist-bounds", default=None,
                     help='--hist 콘솔 비교표의 "대안 경계" (콤마구분 오름차순, 예: '
-                         '"-90,-60,-30,0,30,60,90"). --hist 지정 시 필수(기본값 없음). '
+                         '"-90,-60,-30,0,30,60,90"). 선택 인자 -- --hist만 있고 이게 없으면 '
+                         '히스토그램/CSV만 나오고 콘솔 비교표는 생략된다. '
                          '첫 값이 음수라 argparse가 옵션으로 오인식하므로 '
                          '--hist-bounds=-90,-60,-30,0,30,60,90 처럼 "="로 붙여쓸 것 '
                          '(공백으로 띄우면 "expected one argument" 에러).')
@@ -761,9 +771,6 @@ def main():
             raise SystemExit(f"[diag] {', '.join(bad_detect)}는 --mode detect 지정 시에만 "
                              f"유효합니다.")
 
-    if args.hist and not args.hist_bounds:
-        raise SystemExit('[diag] --hist 사용 시 --hist-bounds 필수 '
-                         '(예: --hist-bounds "-90,-60,-30,0,30,60,90")')
     if args.hist_bounds and not args.hist:
         raise SystemExit("[diag] --hist-bounds는 --hist 지정 시에만 유효합니다.")
 
@@ -784,7 +791,7 @@ def main():
     detect_top = args.detect_top if args.detect_top is not None else 20
     detect_verdict = args.detect_verdict if args.detect_verdict is not None else "all"
     detect_maglat = _parse_detect_maglat(args.detect_maglat)
-    hist_bounds = _parse_hist_bounds(args.hist_bounds) if args.hist else None
+    hist_bounds = _parse_hist_bounds(args.hist_bounds) if args.hist_bounds else None
 
     run(args.detector, args.catalog, channels, fsm_enabled, channel_params,
        onset_floor, args.peak, args.pad_before, args.pad_after,
