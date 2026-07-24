@@ -4,7 +4,8 @@ _match_core_poes.py
 POES 매처(NOAA / SWPC) 공통 유틸리티.
 직접 실행하지 않음 — noaa_goes_spe_match_poes / swpc_alert_espe_match_poes 에서 import.
 
-공유: match_events(SAA 추적), sweep_table(onset CSV 지원), _final_table,
+공유: match_events(SAA 추적), det_matched_mask(검출별 TP/FP 판정, match_events과 공유),
+      sweep_table(onset CSV 지원), _final_table,
       plot_overlay, plot_pod_far_scatter(onset_diff boxplot),
       _name_stem_from_events, _import_event_io,
       _load_count_channel, _io_supports_channels, run_matcher
@@ -52,6 +53,21 @@ def _name_stem_from_events(events_path) -> str:
     return m.group(1) if m else stem
 
 
+def det_matched_mask(det: pd.DataFrame, cat: pd.DataFrame,
+                     tol_h: float = MATCH_TOL_H) -> np.ndarray:
+    """검출(det)별 TP/FP 판정. True=카탈로그 begin_time과 tol_h 이내 매칭(TP), False=FP.
+    match_events()의 det_matched 계산을 추출한 것 -- 여기를 고치면 match_events()도
+    함께 바뀐다(정의는 하나). 재사용처: diag_rolling_threshold_poes.py 판정 표시."""
+    on = pd.to_datetime(det["onset_time"]).values
+    cb = cat.index.values
+    det_matched = np.zeros(len(det), dtype=bool)
+    for i, o in enumerate(on):
+        dh = (cb - o) / np.timedelta64(1, "h")
+        if np.any(np.abs(dh) <= tol_h):
+            det_matched[i] = True
+    return det_matched
+
+
 def match_events(det: pd.DataFrame, cat: pd.DataFrame,
                  tol_h: float = MATCH_TOL_H) -> dict:
     """검출 이벤트(det) ↔ 카탈로그(cat) 매칭. in_saa 컬럼이 있으면 SAA 기원 FA 집계."""
@@ -74,11 +90,7 @@ def match_events(det: pd.DataFrame, cat: pd.DataFrame,
                 peak_diff.append((pk[jc] - cm[i]) / np.timedelta64(1, "h"))
             matched_pfu.append(cpfu[i])
 
-    det_matched = np.zeros(len(det), dtype=bool)
-    for i, o in enumerate(on):
-        dh = (cb - o) / np.timedelta64(1, "h")
-        if np.any(np.abs(dh) <= tol_h):
-            det_matched[i] = True
+    det_matched = det_matched_mask(det, cat, tol_h)
 
     n_cat, n_det = len(cat), len(det)
     n_fa = int((~det_matched).sum())

@@ -7,17 +7,20 @@ POES 카탈로그 이벤트 vs raw count 프리커서를 눈으로 검사하는 
 
 재사용 (재구현 없음 — import만):
   fsm_count_spe_quietoff_mad_poes.py : compute_rolling_bg / detect_segments /
-      load_count / load_geo (롤링 배경 엔진 그대로, --fsm 모드에서만 호출)
-  _match_core_poes.py                : _load_count_channel, _import_event_io
+      load_count / load_geo / tag_onset_geo (롤링 배경 엔진 + geo 사후 태깅 그대로,
+      --fsm 모드에서만 호출)
+  _match_core_poes.py                : _load_count_channel, _import_event_io,
+      det_matched_mask(검출별 TP/FP 판정), match_events(집계 -- 3_event 매칭 출력과 대조용)
   noaa_goes_spe_io                   : load, filter_by_date
   coords_igrf                        : load_geo(with_bmag=True) 내부에서 이미 호출됨
                                         (poes_*_io.get_geo(with_bmag=True));
                                         dipole_maglat()은 극관 밴드 판정에 재사용
                                         (좌표만 사용 — Bmag/IGRF 추가 계산 없음)
 
-그림 1장 = 채널 1개 x 이벤트 1개.
+그림 1장 = 채널 1개 x 이벤트 1개(--mode catalog, 기본) 또는 채널 1개 x 검출 1개(--mode detect).
   검은 실선     : raw count
   옅은 초록 음영: --catalog 이벤트 카탈로그(기본 noaa)의 이벤트 begin~max_time
+                  (--mode detect에선 창과 겹치는 카탈로그 이벤트 전부를 표시)
   초록 점선     : 이벤트 begin / max_time 세로선
   옅은 주황 음영: SAA 구간 (|B|<25000nT)
   파란 계단선   : 극관 통과(pass)별 count median (--maglat-band, 기본 |mlat|>=60)
@@ -25,8 +28,10 @@ POES 카탈로그 이벤트 vs raw count 프리커서를 눈으로 검사하는 
   (--fsm 지정 시에만 추가)
   회색 실선   : rolling bg_median(t)
   빨강 점선   : threshold(t) = bg_median + k*MAD  (onset_floor=0 기본, 순수 공식)
-  주황 세로선 : FSM onset (창 안, 라이브로 detect_segments 재계산)
-  빨강 세로선 : FSM peak (사전계산 fsm_event_*.csv 있으면만 — --peak 지정 시)
+  초록 세로선 : FSM onset TP (카탈로그와 tol_h=24h 이내 매칭 -- _match_core_poes.det_matched_mask 재사용)
+  빨강 세로선 : FSM onset FP (미매칭)
+  crimson 세로선: FSM peak (사전계산 fsm_event_*.csv 있으면만 -- --peak 지정 시)
+  검정 파선   : --mode detect 전용, 이 그림이 중심으로 삼은 검출 1개
 
 사용:
   # 기본(raw) 모드 -- FSM 계산 스킵, 카탈로그 vs raw count만 육안 검사
@@ -37,12 +42,23 @@ POES 카탈로그 이벤트 vs raw count 프리커서를 눈으로 검사하는 
   python diag_rolling_threshold_poes.py --detector metop03 --channels pro_tel0_p5 --maglat-band 60:80
   python diag_rolling_threshold_poes.py --detector metop03 --channels pro_tel0_p5 --maglat-band ""   # 끔
 
-  # --fsm 모드 -- 롤링 배경/임계값/onset 오버레이 복원 (--w/--k/--channel-params/--onset/--peak은
-  # --fsm 지정 시에만 사용 가능)
+  # --fsm 모드 -- 롤링 배경/임계값/onset(TP=초록/FP=빨강) 오버레이 (--w/--k/--channel-params/
+  # --onset/--peak/--mode/--hist는 --fsm 지정 시에만 사용 가능)
   python diag_rolling_threshold_poes.py --fsm w30k10 --channels pro_tel0_p5,omni_p7 --top-events 5
   python diag_rolling_threshold_poes.py --fsm w30k10 \
       --channel-params "pro_tel0_p5:w10k3,omni_p7:w1k7" --top-events 3
   python diag_rolling_threshold_poes.py --fsm w10k3 --channels pro_tel0_p5 --all-events
+
+  # --mode detect -- FSM 검출(onset) 중심 창 (논문 case study용). --detect-maglat/--hist-bounds는
+  # 음수로 시작하면 argparse가 옵션으로 오인식하므로 "="로 붙여쓸 것.
+  python diag_rolling_threshold_poes.py --fsm w1k7 --onset 0 --channels pro_tel0_p5 \
+      --mode detect --detect-top 20
+  python diag_rolling_threshold_poes.py --fsm w1k7 --onset 0 --channels pro_tel0_p5 \
+      --mode detect --detect-verdict fp --detect-maglat=-40,-10
+
+  # --hist -- condbg maglat bin 경계 결정용 히스토그램 + CSV + 콘솔 15도균등 vs 대안경계 비교표
+  python diag_rolling_threshold_poes.py --fsm w1k7 --onset 0 --channels pro_tel0_p5 \
+      --top-events 0 --hist --hist-bounds=-90,-60,-30,0,30,60,90
 """
 from __future__ import annotations
 import argparse
@@ -82,6 +98,13 @@ _CATALOG = {
 }
 
 _DEFAULT_OUT = HERE / "diag_output"
+
+# detect_segments() 반환 dict 키 + fsm_engine.tag_onset_geo() 병합 키.
+# core.det_matched_mask/match_events 가 onset_time/peak_time/onset_maglat/onset_Bmag/in_saa 를
+# 참조하므로 열 순서 무관하게 전부 있어야 한다 (segs=[] 이어도 빈 DataFrame이 이 컬럼들을 갖도록).
+_DET_COLS = ["onset_time", "peak_time", "end_time", "onset_count", "peak_count", "end_count",
+            "duration_h", "bg_median", "bg_sigma", "threshold",
+            "in_saa", "onset_Bmag", "onset_maglat"]
 
 _WK_PATTERN = r"w(?P<w>[\d.]+)k(?P<k>[\d.]+)"
 _CHPARAM_RE = re.compile(rf"^(?P<chan>[^:]+):{_WK_PATTERN}$")
@@ -180,6 +203,39 @@ def _maglat_mask_from_geo(geo: pd.DataFrame | None,
     return pd.Series(m, index=geo.index)
 
 
+def _parse_hist_bounds(spec: str) -> list[float]:
+    """--hist-bounds "e0,e1,...,eN" 파싱 -> 오름차순 경계 리스트 (콘솔 비교표의 "대안 경계").
+    --hist-bounds는 필수 인자(기본값 없음) -- 사용자가 직접 경계 후보를 판단해 지정해야 함."""
+    try:
+        vals = [float(x) for x in spec.split(",")]
+    except ValueError:
+        raise SystemExit(f"[diag] --hist-bounds 형식 오류: '{spec}' (콤마구분 숫자, 예: \"-90,-60,-30,0,30,60,90\")")
+    if len(vals) < 2:
+        raise SystemExit(f"[diag] --hist-bounds 값 오류: '{spec}' (경계 2개 이상 필요)")
+    if any(v < -90 or v > 90 for v in vals):
+        raise SystemExit(f"[diag] --hist-bounds 값 오류: '{spec}' (-90~90 범위여야 함)")
+    if any(a >= b for a, b in zip(vals, vals[1:])):
+        raise SystemExit(f"[diag] --hist-bounds 값 오류: '{spec}' (오름차순 필요)")
+    return vals
+
+
+def _parse_detect_maglat(spec: str | None) -> tuple[float, float] | None:
+    """--detect-maglat "LO,HI" 파싱 (부호 유지 -- --maglat-band와 달리 |lat| 아님).
+    None/빈 문자열 -> 필터 없음."""
+    if not spec:
+        return None
+    parts = spec.split(",")
+    if len(parts) != 2:
+        raise SystemExit(f"[diag] --detect-maglat 형식 오류: '{spec}' (기대: \"LO,HI\", 예: \"-40,-10\")")
+    try:
+        lo, hi = float(parts[0]), float(parts[1])
+    except ValueError:
+        raise SystemExit(f"[diag] --detect-maglat 형식 오류: '{spec}' (숫자로 파싱 불가)")
+    if lo > hi:
+        raise SystemExit(f"[diag] --detect-maglat 값 오류: '{spec}' (하한 {lo:g}가 상한 {hi:g}보다 큼)")
+    return (lo, hi)
+
+
 def _reindex_mask_to(mask: pd.Series, target_index: pd.Index) -> pd.Series:
     """geo 인덱스 마스크를 count 인덱스로 정렬. 다르면 nearest reindex(15분 허용오차), NaN은 False."""
     if mask.index.equals(target_index):
@@ -224,37 +280,85 @@ def _find_peak_times(detector: str, channel: str, w: int, k: float,
     return pd.to_datetime(ev.loc[ev["channel"] == channel, "peak_time"]).tolist()
 
 
+def _draw_polar_median(ax, polar: dict | None, t0, t1):
+    if polar is None:
+        return
+    pmed_win = polar["median"].loc[t0:t1]
+    if not pmed_win.empty:
+        ax.plot(pmed_win.index, pmed_win.values, color="blue", drawstyle="steps-mid",
+               marker="o", ms=3, lw=1.2, zorder=3.5,
+               label=f"pass median ({_maglat_band_label(polar['band'])})")
+
+
+def _draw_polar_mask(ax, polar: dict | None, t0, t1):
+    if polar is None:
+        return
+    pmask_win = polar["mask"].loc[t0:t1]
+    for i, (s, e) in enumerate(_contiguous_spans(pmask_win)):
+        ax.axvspan(s, e, color="tab:blue", alpha=0.08, zorder=0,
+                  label=f"polar cap ({_maglat_band_label(polar['band'])})" if i == 0 else None)
+
+
+def _draw_saa_shading(ax, saa_mask: pd.Series | None, t0, t1):
+    if saa_mask is None:
+        return
+    swin = saa_mask.loc[t0:t1] if not saa_mask.loc[t0:t1].empty else saa_mask.reindex([]).astype(bool)
+    for i, (s, e) in enumerate(_contiguous_spans(swin)):
+        ax.axvspan(s, e, color="orange", alpha=0.12, zorder=0,
+                  label="SAA (|B|<25000nT)" if i == 0 else None)
+
+
+def _draw_fsm_bg_thr(ax, fsm: dict, t0, t1):
+    bwin = fsm["bg"].loc[t0:t1]
+    twin = fsm["thr"].loc[t0:t1]
+    ax.plot(bwin.index, bwin["bg_median"], color="#888888", lw=1.0, zorder=2,
+            label="rolling bg_median")
+    ax.plot(twin.index, twin.values, color="red", ls=":", lw=1.2, zorder=2,
+            label="threshold = bg_median + k*MAD")
+
+
+def _draw_onset_peak_lines(ax, fsm: dict, t0, t1):
+    """onset 세로선을 판정별(TP=초록/FP=빨강)로 그리고, peak 세로선(crimson)도 그린다.
+    범례에 창 내 개수와 전체 개수를 병기 ("FSM onset TP (3/31)")."""
+    onset_times = fsm["onset_times"]
+    verdict = fsm["onset_verdict"]
+    tp_total = int(np.sum(verdict)) if len(verdict) else 0
+    fp_total = len(verdict) - tp_total
+    in_win = [(ot, bool(v)) for ot, v in zip(onset_times, verdict) if t0 <= ot <= t1]
+    tp_win = sum(1 for _, v in in_win if v)
+    fp_win = sum(1 for _, v in in_win if not v)
+    tp_i = fp_i = 0
+    for ot, v in in_win:
+        if v:
+            tp_i += 1
+            lbl = f"FSM onset TP ({tp_win}/{tp_total})" if tp_i == 1 else None
+            ax.axvline(ot, color="#1e8449", ls="-", lw=1.3, alpha=0.85, zorder=4, label=lbl)
+        else:
+            fp_i += 1
+            lbl = f"FSM onset FP ({fp_win}/{fp_total})" if fp_i == 1 else None
+            ax.axvline(ot, color="#c0392b", ls="-", lw=1.3, alpha=0.85, zorder=4, label=lbl)
+    for i, pt in enumerate([p for p in fsm["peak_times"] if t0 <= p <= t1]):
+        ax.axvline(pt, color="crimson", ls="-", lw=1.3, alpha=0.85, zorder=4,
+                   label="FSM peak" if i == 0 else None)
+
+
 def plot_one(channel: str, cnt: pd.Series, saa_mask: pd.Series | None,
             event_begin, event_max_time, event_pfu, t0, t1, out_path: Path,
             detector: str, catalog: str, fsm: dict | None = None, polar: dict | None = None):
-    """fsm=None -> raw count + 카탈로그/SAA 음영만. fsm={bg,thr,onset_times,peak_times,w,k}
-    -> 롤링 배경/임계값/onset/peak 오버레이 추가. polar={mask,median,band}(count 인덱스로
-    정렬된 극관 마스크 + pass median 시계열) -> 극관 pass median 계단선/음영 추가."""
+    """fsm=None -> raw count + 카탈로그/SAA 음영만. fsm={bg,thr,onset_times,onset_verdict,
+    peak_times,w,k} -> 롤링 배경/임계값/onset(TP/FP 색 구분)/peak 오버레이 추가.
+    polar={mask,median,band}(count 인덱스로 정렬된 극관 마스크 + pass median 시계열)
+    -> 극관 pass median 계단선/음영 추가."""
     win = cnt.loc[t0:t1]
 
     fig, ax = plt.subplots(figsize=(13, 4.5))
     ax.plot(win.index, win.values, color="black", lw=0.8, zorder=3, label="raw count")
 
-    if polar is not None:
-        pmed_win = polar["median"].loc[t0:t1]
-        if not pmed_win.empty:
-            ax.plot(pmed_win.index, pmed_win.values, color="blue", drawstyle="steps-mid",
-                   marker="o", ms=3, lw=1.2, zorder=3.5,
-                   label=f"pass median ({_maglat_band_label(polar['band'])})")
+    _draw_polar_median(ax, polar, t0, t1)
 
     if fsm is not None:
-        bwin = fsm["bg"].loc[t0:t1]
-        twin = fsm["thr"].loc[t0:t1]
-        ax.plot(bwin.index, bwin["bg_median"], color="#888888", lw=1.0, zorder=2,
-                label="rolling bg_median")
-        ax.plot(twin.index, twin.values, color="red", ls=":", lw=1.2, zorder=2,
-                label="threshold = bg_median + k*MAD")
-        for i, ot in enumerate([o for o in fsm["onset_times"] if t0 <= o <= t1]):
-            ax.axvline(ot, color="orange", ls="-", lw=1.3, alpha=0.85, zorder=4,
-                       label="FSM onset" if i == 0 else None)
-        for i, pt in enumerate([p for p in fsm["peak_times"] if t0 <= p <= t1]):
-            ax.axvline(pt, color="crimson", ls="-", lw=1.3, alpha=0.85, zorder=4,
-                       label="FSM peak" if i == 0 else None)
+        _draw_fsm_bg_thr(ax, fsm, t0, t1)
+        _draw_onset_peak_lines(ax, fsm, t0, t1)
 
     ax.axvspan(event_begin, event_max_time, color="green", alpha=0.15, zorder=1,
               label=f"{catalog.upper()} catalog (pfu={event_pfu:.0f})")
@@ -263,17 +367,8 @@ def plot_one(channel: str, cnt: pd.Series, saa_mask: pd.Series | None,
     ax.axvline(event_max_time, color="darkgreen", ls="--", lw=1.0, alpha=0.7, zorder=2,
               label="event max_time")
 
-    if saa_mask is not None:
-        swin = saa_mask.loc[t0:t1] if not saa_mask.loc[t0:t1].empty else saa_mask.reindex([]).astype(bool)
-        for i, (s, e) in enumerate(_contiguous_spans(swin)):
-            ax.axvspan(s, e, color="orange", alpha=0.12, zorder=0,
-                      label="SAA (|B|<25000nT)" if i == 0 else None)
-
-    if polar is not None:
-        pmask_win = polar["mask"].loc[t0:t1]
-        for i, (s, e) in enumerate(_contiguous_spans(pmask_win)):
-            ax.axvspan(s, e, color="tab:blue", alpha=0.08, zorder=0,
-                      label=f"polar cap ({_maglat_band_label(polar['band'])})" if i == 0 else None)
+    _draw_saa_shading(ax, saa_mask, t0, t1)
+    _draw_polar_mask(ax, polar, t0, t1)
 
     ax.set_ylabel("count rate [15-min mean]", fontsize=9)
     ax.set_yscale("log")
@@ -294,24 +389,185 @@ def plot_one(channel: str, cnt: pd.Series, saa_mask: pd.Series | None,
     print(f"[diag] saved -> {out_path}")
 
 
+def plot_one_detect(channel: str, cnt: pd.Series, saa_mask: pd.Series | None,
+                    cat: pd.DataFrame, center_idx: int, t0, t1, out_path: Path,
+                    detector: str, catalog: str, fsm: dict, polar: dict | None = None):
+    """--mode detect 전용: FSM 검출(onset) 중심 창. fsm['onset_times'][center_idx]가 창의 중심.
+    plot_one과 동일한 오버레이 헬퍼(_draw_*)를 재사용하되, 카탈로그 음영은 창과 겹치는
+    카탈로그 이벤트 전부(0개 이상)를 표시 -- catalog 모드처럼 이벤트 1개 전제가 아니므로."""
+    win = cnt.loc[t0:t1]
+    center_t = fsm["onset_times"][center_idx]
+    verdict  = bool(fsm["onset_verdict"][center_idx])
+    maglat   = fsm["onset_maglat"][center_idx]
+    bmag     = fsm["onset_Bmag"][center_idx]
+    in_saa_v = fsm["in_saa"][center_idx]
+
+    fig, ax = plt.subplots(figsize=(13, 4.5))
+    ax.plot(win.index, win.values, color="black", lw=0.8, zorder=3, label="raw count")
+
+    _draw_polar_median(ax, polar, t0, t1)
+    _draw_fsm_bg_thr(ax, fsm, t0, t1)
+    _draw_onset_peak_lines(ax, fsm, t0, t1)
+    ax.axvline(center_t, color="black", ls="--", lw=1.6, alpha=0.9, zorder=5,
+              label="center (this detection)")
+
+    overlap = cat[(cat.index <= t1) & (cat["max_time"] >= t0)]
+    for i, (b, row) in enumerate(overlap.iterrows()):
+        ax.axvspan(b, row["max_time"], color="green", alpha=0.15, zorder=1,
+                  label=f"{catalog.upper()} catalog (pfu={row['max_pfu']:.0f})" if i == 0 else None)
+        ax.axvline(b, color="darkgreen", ls="--", lw=1.0, alpha=0.7, zorder=2)
+        ax.axvline(row["max_time"], color="darkgreen", ls="--", lw=1.0, alpha=0.7, zorder=2)
+
+    _draw_saa_shading(ax, saa_mask, t0, t1)
+    _draw_polar_mask(ax, polar, t0, t1)
+
+    ax.set_ylabel("count rate [15-min mean]", fontsize=9)
+    ax.set_yscale("log")
+    verdict_s = "TP" if verdict else "FP"
+    maglat_s = f"{maglat:.1f}" if np.isfinite(maglat) else "nan"
+    bmag_s = f"{bmag:.0f}" if np.isfinite(bmag) else "nan"
+    title = (f"{channel}  detector={detector} catalog={catalog}  w={fsm['w']} k={fsm['k']}  "
+            f"onset={center_t:%Y-%m-%d %H:%M}  verdict={verdict_s}  "
+            f"maglat={maglat_s} Bmag={bmag_s} in_saa={in_saa_v}")
+    ax.set_title(title, fontsize=9)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=7, loc="upper left", framealpha=0.9)
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[diag] saved -> {out_path}")
+
+
+def _select_detect_indices(fsm_data: dict, top_n: int, verdict_filter: str,
+                           maglat_filter: tuple[float, float] | None) -> list[int]:
+    """--mode detect 용 onset 선택: verdict/maglat 필터 적용 후 onset_count 큰 순 top_n개.
+    반환 인덱스는 fsm_data['onset_times']/['onset_verdict']/['onset_maglat']/... 배열과
+    같은 순서(=detect_segments가 반환한 순서)를 기준으로 한다."""
+    n = len(fsm_data["onset_times"])
+    idx = np.arange(n)
+    if verdict_filter == "tp":
+        idx = idx[fsm_data["onset_verdict"][idx]]
+    elif verdict_filter == "fp":
+        idx = idx[~fsm_data["onset_verdict"][idx]]
+    if maglat_filter is not None:
+        lo, hi = maglat_filter
+        mlat = fsm_data["onset_maglat"][idx]
+        idx = idx[(mlat >= lo) & (mlat <= hi) & np.isfinite(mlat)]
+    order = np.argsort(-fsm_data["onset_count"][idx])
+    return idx[order][:top_n].tolist()
+
+
+def _bin_table(tp_lat: np.ndarray, fp_lat: np.ndarray, edges) -> pd.DataFrame:
+    """maglat 경계(edges)별 TP/FP 개수 + 창 내 점유율(share) + purity(=tp/(tp+fp)) 표."""
+    tpc, _ = np.histogram(tp_lat, bins=edges)
+    fpc, _ = np.histogram(fp_lat, bins=edges)
+    tp_tot, fp_tot = tp_lat.size, fp_lat.size
+    rows = []
+    for i in range(len(edges) - 1):
+        t, f = int(tpc[i]), int(fpc[i])
+        rows.append({
+            "bin": f"[{edges[i]:g},{edges[i + 1]:g})",
+            "tp_count": t, "fp_count": f,
+            "tp_share": round(t / tp_tot, 3) if tp_tot else np.nan,
+            "fp_share": round(f / fp_tot, 3) if fp_tot else np.nan,
+            "purity_tp": round(t / (t + f), 3) if (t + f) else np.nan,
+        })
+    return pd.DataFrame(rows)
+
+
+def plot_hist(channel: str, onset_maglat: np.ndarray, onset_verdict: np.ndarray,
+             onset_Bmag: np.ndarray, detector: str, catalog: str, w: int, k: float,
+             hist_bounds: list[float], out_dir: Path) -> None:
+    """condbg maglat bin 경계 결정용 (--hist).
+    그림1: TP/FP onset_maglat 5도 히스토그램 겹쳐그리기 (부호 유지 -90~90).
+    그림2: FP onset_Bmag 히스토그램 + SAA 임계선(25000nT).
+    CSV: 5도 bin별 (bin_lo,bin_hi,tp_count,fp_count).
+    콘솔: 15도 균등 bin vs --hist-bounds(대안 경계) TP/FP 수·비율 비교표."""
+    verdict = onset_verdict.astype(bool)
+    tp_lat = onset_maglat[verdict]
+    fp_lat = onset_maglat[~verdict]
+    tp_lat = tp_lat[np.isfinite(tp_lat)]
+    fp_lat = fp_lat[np.isfinite(fp_lat)]
+    fp_bmag = onset_Bmag[~verdict]
+    fp_bmag = fp_bmag[np.isfinite(fp_bmag)]
+
+    tag = f"{catalog}_{detector}_{channel}_w{w}k{fsm_engine._numstr(k)}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    edges5 = np.arange(-90, 91, 5)
+    fig, ax = plt.subplots(figsize=(9, 4.5))
+    ax.hist(fp_lat, bins=edges5, color="#c0392b", alpha=0.55, label=f"FP (n={fp_lat.size})")
+    ax.hist(tp_lat, bins=edges5, color="#1e8449", alpha=0.55, label=f"TP (n={tp_lat.size})")
+    ax.set_xlabel("onset maglat [deg]", fontsize=9)
+    ax.set_ylabel("count", fontsize=9)
+    ax.set_title(f"{channel}  onset_maglat TP/FP histogram (5deg bin)  w={w} k={k}", fontsize=10)
+    ax.legend(fontsize=8)
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    p1 = out_dir / f"hist_maglat_{tag}.png"
+    fig.savefig(p1, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[diag] hist saved -> {p1}")
+
+    fig, ax = plt.subplots(figsize=(9, 4.5))
+    if fp_bmag.size:
+        ax.hist(fp_bmag, bins=40, color="#c0392b", alpha=0.7)
+    ax.axvline(fsm_engine.SAA_BMAG_NT, color="black", ls="--", lw=1.2,
+              label=f"SAA threshold ({fsm_engine.SAA_BMAG_NT:.0f}nT)")
+    ax.set_xlabel("onset Bmag [nT]", fontsize=9)
+    ax.set_ylabel("count", fontsize=9)
+    ax.set_title(f"{channel}  FP onset_Bmag histogram  w={w} k={k}  (n={fp_bmag.size})", fontsize=10)
+    ax.legend(fontsize=8)
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    p2 = out_dir / f"hist_bmag_fp_{tag}.png"
+    fig.savefig(p2, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[diag] hist saved -> {p2}")
+
+    tp_cnt5, _ = np.histogram(tp_lat, bins=edges5)
+    fp_cnt5, _ = np.histogram(fp_lat, bins=edges5)
+    df_bin = pd.DataFrame({"bin_lo": edges5[:-1], "bin_hi": edges5[1:],
+                           "tp_count": tp_cnt5, "fp_count": fp_cnt5})
+    csv_path = out_dir / f"hist_maglat_{tag}.csv"
+    df_bin.to_csv(csv_path, index=False)
+    print(f"[diag] hist csv -> {csv_path}")
+
+    edges15 = np.arange(-90, 91, 15)
+    print(f"\n[diag] {channel} maglat bin 비교 (TP n={tp_lat.size}, FP n={fp_lat.size}):")
+    print("  -- 15도 균등 bin --")
+    print(_bin_table(tp_lat, fp_lat, edges15).to_string(index=False))
+    print(f"  -- --hist-bounds 대안 경계 {hist_bounds} --")
+    print(_bin_table(tp_lat, fp_lat, hist_bounds).to_string(index=False))
+
+
 def run(detector: str, catalog: str, channels: list[str],
        fsm_enabled: bool, channel_params: dict[str, tuple[int, float]] | None,
        onset_floor: float, peak_floor: float | None,
        pad_before: float, pad_after: float,
        top_events: int, all_events: bool, out_dir: Path,
-       maglat_band_spec: str, maglat_band: tuple[float, float | None] | None):
+       maglat_band_spec: str, maglat_band: tuple[float, float | None] | None,
+       mode: str = "catalog", detect_top: int = 20, detect_verdict: str = "all",
+       detect_maglat: tuple[float, float] | None = None,
+       hist: bool = False, hist_bounds: list[float] | None = None):
     io_name, cache_dir = _POES_IO[detector]
     io = core._import_event_io(io_name, str(cache_dir))
 
     cat = _load_catalog(catalog)
-    if all_events:
-        print(f"[diag] --all-events: 카탈로그 {len(cat)}개 전부 -> "
-              f"채널당 그림 {len(cat)}장, 총 {len(cat) * len(channels)}장 생성 예정 (경고)")
-        events = cat.sort_values("max_pfu", ascending=False)
+    if mode == "catalog":
+        if all_events:
+            print(f"[diag] --all-events: 카탈로그 {len(cat)}개 전부 -> "
+                  f"채널당 그림 {len(cat)}장, 총 {len(cat) * len(channels)}장 생성 예정 (경고)")
+            events = cat.sort_values("max_pfu", ascending=False)
+        else:
+            events = cat.sort_values("max_pfu", ascending=False).head(top_events)
+        print(f"[diag] detector={detector} catalog={catalog}  이벤트 {len(events)}개 선택 "
+              f"(pfu범위 {events['max_pfu'].min():.0f}~{events['max_pfu'].max():.0f})")
     else:
-        events = cat.sort_values("max_pfu", ascending=False).head(top_events)
-    print(f"[diag] detector={detector} catalog={catalog}  이벤트 {len(events)}개 선택 "
-          f"(pfu범위 {events['max_pfu'].min():.0f}~{events['max_pfu'].max():.0f})")
+        print(f"[diag] --mode detect: detector={detector} catalog={catalog}(판정/음영 참조용)  "
+              f"채널당 검출 최대 {detect_top}개 (verdict={detect_verdict})")
 
     # geo는 SAA 마스크와 극관 마스크가 공유 (한 번만 로드)
     geo = fsm_engine.load_geo(io, str(cache_dir))
@@ -341,13 +597,35 @@ def run(detector: str, catalog: str, channels: list[str],
             bg  = fsm_engine.compute_rolling_bg(cnt, int(w), None, fsm_engine.BG_UPDATE_FREQ)
             thr = fsm_engine.build_threshold(bg, k, onset_floor)
             segs = fsm_engine.detect_segments(cnt, thr, bg, fsm_engine.MIN_SPE_DURATION_H)
+            for s in segs:
+                s.update(fsm_engine.tag_onset_geo(s["onset_time"], geo))
             onset_times = [s["onset_time"] for s in segs]
             peak_times  = _find_peak_times(detector, channel, w, k, onset_floor, peak_floor)
+
+            # TP/FP 판정 -- _match_core_poes.det_matched_mask 재사용 (match_events과 동일 정의,
+            # tol_h=core.MATCH_TOL_H). match_events()로 집계치도 뽑아 3_event 매칭 출력과 대조 가능.
+            det_df = pd.DataFrame(segs, columns=_DET_COLS)
+            onset_verdict = core.det_matched_mask(det_df, cat, core.MATCH_TOL_H)
+            r = core.match_events(det_df, cat, core.MATCH_TOL_H)
+
             print(f"[diag] {channel} w={w} k={k}: count n={len(cnt)}  onset 검출 {len(onset_times)}개"
                   + (f"  peak {len(peak_times)}개" if peak_floor is not None else ""))
-            fsm_data = dict(bg=bg, thr=thr, onset_times=onset_times, peak_times=peak_times, w=w, k=k)
+            print(f"[diag] {channel} w={w} k={k}: 판정(matcher 재현) n_det={r['n_det']} "
+                  f"n_hit={r['n_hit']} n_fa={r['n_fa']} POD={r['pod']:.3f} FAR={r['far']:.3f} "
+                  f"-- 3_event 매칭 출력(noaa_match_summary_all_*.csv)과 대조할 것")
+            fsm_data = dict(bg=bg, thr=thr, onset_times=onset_times, peak_times=peak_times, w=w, k=k,
+                            onset_verdict=onset_verdict,
+                            onset_maglat=det_df["onset_maglat"].to_numpy(),
+                            onset_Bmag=det_df["onset_Bmag"].to_numpy(),
+                            in_saa=det_df["in_saa"].to_numpy(),
+                            onset_count=det_df["onset_count"].to_numpy())
         else:
             print(f"[diag] {channel}: count n={len(cnt)} (raw 모드 -- FSM 계산 생략)")
+
+        if hist:
+            plot_hist(channel, fsm_data["onset_maglat"], fsm_data["onset_verdict"],
+                     fsm_data["onset_Bmag"], detector, catalog, fsm_data["w"], fsm_data["k"],
+                     hist_bounds, out_dir)
 
         polar_data = None
         if polar_mask_geo is not None:
@@ -357,20 +635,40 @@ def run(detector: str, catalog: str, channels: list[str],
             print(f"[diag] {channel}: 극관 pass {len(pmedian)}개 검출 "
                   f"({_maglat_band_label(maglat_band)})")
 
-        for begin, row in events.iterrows():
-            t0 = begin - pd.Timedelta(days=pad_before)
-            t1 = begin + pd.Timedelta(days=pad_after)
-            if cnt.loc[t0:t1].empty:
-                print(f"[diag] {channel} {begin.date()}: 창 안에 count 없음 -> skip")
-                continue
-            if fsm_data is not None:
-                suffix = f"_w{fsm_data['w']}k{fsm_engine._numstr(fsm_data['k'])}"
-            else:
-                suffix = ""
-            out_path = out_dir / f"{catalog}_{detector}_{channel}_{begin:%Y%m%d}{suffix}{mlat_suffix}.png"
-            plot_one(channel, cnt, saa_mask, begin, row["max_time"], row["max_pfu"],
-                    t0, t1, out_path, detector, catalog, fsm=fsm_data, polar=polar_data)
-            saved.append(out_path)
+        if mode == "catalog":
+            for begin, row in events.iterrows():
+                t0 = begin - pd.Timedelta(days=pad_before)
+                t1 = begin + pd.Timedelta(days=pad_after)
+                if cnt.loc[t0:t1].empty:
+                    print(f"[diag] {channel} {begin.date()}: 창 안에 count 없음 -> skip")
+                    continue
+                if fsm_data is not None:
+                    suffix = f"_w{fsm_data['w']}k{fsm_engine._numstr(fsm_data['k'])}"
+                else:
+                    suffix = ""
+                out_path = out_dir / f"{catalog}_{detector}_{channel}_{begin:%Y%m%d}{suffix}{mlat_suffix}.png"
+                plot_one(channel, cnt, saa_mask, begin, row["max_time"], row["max_pfu"],
+                        t0, t1, out_path, detector, catalog, fsm=fsm_data, polar=polar_data)
+                saved.append(out_path)
+        else:
+            indices = _select_detect_indices(fsm_data, detect_top, detect_verdict, detect_maglat)
+            print(f"[diag] {channel}: detect 모드 선택 {len(indices)}개 "
+                  f"(verdict={detect_verdict}, maglat={detect_maglat})")
+            suffix = f"_w{fsm_data['w']}k{fsm_engine._numstr(fsm_data['k'])}"
+            for idx in indices:
+                onset_t = fsm_data["onset_times"][idx]
+                t0 = onset_t - pd.Timedelta(days=pad_before)
+                t1 = onset_t + pd.Timedelta(days=pad_after)
+                if cnt.loc[t0:t1].empty:
+                    print(f"[diag] {channel} {onset_t}: 창 안에 count 없음 -> skip")
+                    continue
+                verdict_s = "TP" if fsm_data["onset_verdict"][idx] else "FP"
+                out_path = (out_dir /
+                           f"detect_{catalog}_{detector}_{channel}_{onset_t:%Y%m%d_%H%M}_"
+                           f"{verdict_s}{suffix}{mlat_suffix}.png")
+                plot_one_detect(channel, cnt, saa_mask, cat, idx, t0, t1, out_path,
+                               detector, catalog, fsm=fsm_data, polar=polar_data)
+                saved.append(out_path)
 
     print(f"\n[diag] 완료: {len(saved)}장 저장 -> {out_dir}")
     return saved
@@ -417,6 +715,28 @@ def main():
                          '"60" -> |maglat|>=60 (하한만), "60:80" -> 60<=|maglat|<=80. '
                          '빈 문자열("")이면 오버레이를 끈다. 기본값("60") 이외 지정 시 '
                          '파일명에 "_mlat{spec}" suffix 추가(콜론은 "-"로 치환).')
+    ap.add_argument("--mode", default="catalog", choices=["catalog", "detect"],
+                    help='그림 창 중심 (기본 catalog). catalog=카탈로그 이벤트 중심(현행). '
+                         'detect=FSM 검출(onset) 중심 -- TP/FP 가리지 않고 검출 자체가 대상 '
+                         '(--fsm 지정 시에만 유효, --detect-* 옵션과 함께 사용).')
+    ap.add_argument("--detect-top", type=int, default=None,
+                    help="--mode detect 전용: onset_count 큰 순 N개 (기본 20)")
+    ap.add_argument("--detect-verdict", default=None, choices=["all", "tp", "fp"],
+                    help="--mode detect 전용: 판정별 필터 (기본 all)")
+    ap.add_argument("--detect-maglat", default=None,
+                    help='--mode detect 전용: 지정 위도대 검출만. "LO,HI" (부호 유지, '
+                         '예: "-40,-10"). 미지정 시 필터 없음. LO가 음수면 argparse가 '
+                         '옵션으로 오인식하므로 --detect-maglat=-40,-10 처럼 "="로 붙여쓸 것.')
+    ap.add_argument("--hist", action="store_true",
+                    help="condbg maglat bin 경계 결정용 히스토그램(TP/FP onset_maglat 5도 + "
+                         "FP onset_Bmag) + CSV + 콘솔 bin 비교표 출력 (--fsm 지정 시에만 유효, "
+                         "--hist-bounds 필수).")
+    ap.add_argument("--hist-bounds", default=None,
+                    help='--hist 콘솔 비교표의 "대안 경계" (콤마구분 오름차순, 예: '
+                         '"-90,-60,-30,0,30,60,90"). --hist 지정 시 필수(기본값 없음). '
+                         '첫 값이 음수라 argparse가 옵션으로 오인식하므로 '
+                         '--hist-bounds=-90,-60,-30,0,30,60,90 처럼 "="로 붙여쓸 것 '
+                         '(공백으로 띄우면 "expected one argument" 에러).')
     ap.add_argument("--out", default=str(_DEFAULT_OUT))
     args = ap.parse_args()
 
@@ -428,6 +748,24 @@ def main():
         if bad:
             raise SystemExit(f"[diag] {', '.join(bad)}는 --fsm 지정 시에만 유효합니다 "
                              f"(예: --fsm w30k10). raw 모드에서는 사용할 수 없습니다.")
+        if args.mode == "detect":
+            raise SystemExit("[diag] --mode detect는 --fsm 지정 시에만 유효합니다 (FSM onset 필요).")
+        if args.hist:
+            raise SystemExit("[diag] --hist는 --fsm 지정 시에만 유효합니다 (TP/FP 판정 필요).")
+
+    if args.mode != "detect":
+        locked_detect = {"--detect-top": args.detect_top, "--detect-verdict": args.detect_verdict,
+                         "--detect-maglat": args.detect_maglat}
+        bad_detect = [name for name, v in locked_detect.items() if v is not None]
+        if bad_detect:
+            raise SystemExit(f"[diag] {', '.join(bad_detect)}는 --mode detect 지정 시에만 "
+                             f"유효합니다.")
+
+    if args.hist and not args.hist_bounds:
+        raise SystemExit('[diag] --hist 사용 시 --hist-bounds 필수 '
+                         '(예: --hist-bounds "-90,-60,-30,0,30,60,90")')
+    if args.hist_bounds and not args.hist:
+        raise SystemExit("[diag] --hist-bounds는 --hist 지정 시에만 유효합니다.")
 
     channels = [c.strip() for c in args.channels.split(",") if c.strip()]
 
@@ -443,11 +781,17 @@ def main():
         channel_params = _parse_channel_params(channels, w_default, k_default, args.channel_params)
 
     maglat_band = _parse_maglat_band(args.maglat_band)
+    detect_top = args.detect_top if args.detect_top is not None else 20
+    detect_verdict = args.detect_verdict if args.detect_verdict is not None else "all"
+    detect_maglat = _parse_detect_maglat(args.detect_maglat)
+    hist_bounds = _parse_hist_bounds(args.hist_bounds) if args.hist else None
 
     run(args.detector, args.catalog, channels, fsm_enabled, channel_params,
        onset_floor, args.peak, args.pad_before, args.pad_after,
        args.top_events, args.all_events, Path(args.out),
-       args.maglat_band, maglat_band)
+       args.maglat_band, maglat_band,
+       mode=args.mode, detect_top=detect_top, detect_verdict=detect_verdict,
+       detect_maglat=detect_maglat, hist=args.hist, hist_bounds=hist_bounds)
 
 
 if __name__ == "__main__":
