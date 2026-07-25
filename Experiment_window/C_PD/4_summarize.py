@@ -271,6 +271,10 @@ def build_master_table(detectors: list[str], catalogs: list[str],
                     "maglat_bins": parsed["maglat_bins"],
                     "channel": row["channel"],
                     "POD": row["POD"], "FAR": row["FAR"],
+                    "event_FAR": row["event_FAR"],
+                    "n_events_total": row["n_events_total"],
+                    "n_events_tp": row["n_events_tp"],
+                    "n_events_fa": row["n_events_fa"],
                     "n_det": row["n_det"], "n_hit": row["n_hit"],
                     "n_fa": row["n_fa"], "n_fa_saa": row["n_fa_saa"],
                     "fa_maglat_median": row["fa_maglat_median"],
@@ -289,6 +293,8 @@ def build_master_table(detectors: list[str], catalogs: list[str],
                     "maglat_bins": parsed["maglat_bins"],
                     "channel": ch,
                     "POD": 0.0, "FAR": float("nan"),
+                    "event_FAR": float("nan"),
+                    "n_events_total": 0, "n_events_tp": 0, "n_events_fa": 0,
                     "n_det": 0, "n_hit": 0,
                     "n_fa": 0, "n_fa_saa": float("nan"),
                     "fa_maglat_median": float("nan"),
@@ -304,14 +310,17 @@ def build_master_table(detectors: list[str], catalogs: list[str],
 
 # ── STEP C: best_table ──────────────────────────────────────────────────
 
-CRITERIA = ("min_far", "max_pod", "youden", "f1")
+CRITERIA = ("min_far", "min_event_far", "max_pod", "youden", "f1")
 
 # 기준별: (score 컬럼, score 오름차순 정렬 여부, tie-break 컬럼, tie-break 오름차순 여부)
+# min_event_far: n_det 기반 FAR 대신 event_FAR(24h 클러스터링, 같은 이벤트 중복재검출
+# 흡수) 기준 -- 중복 재검출이 심한 조합이 min_far에서 부당하게 유리해지는 착시 보정용.
 _CRITERION_KEY = {
-    "min_far": ("FAR",    True,  "POD", False),
-    "max_pod": ("POD",    False, "FAR", True),
-    "youden":  ("youden", False, "POD", False),
-    "f1":      ("f1",     False, "POD", False),
+    "min_far":       ("FAR",       True,  "POD", False),
+    "min_event_far": ("event_FAR", True,  "POD", False),
+    "max_pod":        ("POD",      False, "FAR", True),
+    "youden":         ("youden",   False, "POD", False),
+    "f1":             ("f1",       False, "POD", False),
 }
 
 # 예측 모델 라벨 앵커 후보 채널 (pro proton telescope p4/p5, tel0/tel90)

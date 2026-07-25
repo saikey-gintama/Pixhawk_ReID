@@ -4,11 +4,20 @@ _match_core_poes.py
 POES 매처(NOAA / SWPC) 공통 유틸리티.
 직접 실행하지 않음 — noaa_goes_spe_match_poes / swpc_alert_espe_match_poes 에서 import.
 
-공유: match_events(SAA 추적), det_matched_mask(검출별 TP/FP 판정, match_events과 공유),
-      sweep_table(onset CSV 지원), _final_table,
+공유: match_events(SAA 추적 + 이벤트 단위 클러스터링), det_matched_mask(검출별
+      TP/FP 판정, match_events과 공유), sweep_table(onset CSV 지원), _final_table,
       plot_overlay, plot_pod_far_scatter(onset_diff boxplot),
       _name_stem_from_events, _import_event_io,
       _load_count_channel, _io_supports_channels, run_matcher
+
+이벤트 단위 지표 (n_events_fa / event_FAR):
+  검출 하나하나를 셀 때(FAR=n_fa/n_det)는 같은 실제 이벤트를 여러 번 재검출하면
+  n_det만 부풀어 FAR이 실제보다 낮아 보이는 착시가 생긴다. match_events()가
+  onset_time을 24h(cluster_gap_h, 기본 tol_h와 동일) 간격으로 묶어 "고유 검출
+  사건" 단위로도 함께 집계한다 -- 클러스터 안에 카탈로그 매칭 검출이 하나라도
+  있으면 TP 클러스터, 없으면 FP(오탐) 클러스터. n_hit(카탈로그측 적중 수, POD
+  분자)은 클러스터링과 무관하게 불변이므로 event_FAR = n_events_fa /
+  (n_hit + n_events_fa) 로 정의(고유 알람 중 가짜 비율, FDR류 지표).
 """
 from __future__ import annotations
 import argparse
@@ -68,9 +77,42 @@ def det_matched_mask(det: pd.DataFrame, cat: pd.DataFrame,
     return det_matched
 
 
+def _cluster_events(onset_times: np.ndarray, matched: np.ndarray, gap_h: float) -> tuple[int, int, int]:
+    """검출을 onset_time 시간순 정렬 후 gap>gap_h[h]일 때마다 새 클러스터를 여는
+    방식으로 '고유 검출 사건' 단위로 묶는다(apply_refractory()류 sequential-gap
+    클러스터링과 동일 개념, 매처 쪽 재구현). matched[i]==True(카탈로그 매칭)인
+    검출이 클러스터 안에 하나라도 있으면 그 클러스터는 TP, 없으면 FP(오탐) 클러스터.
+    반환: (n_events_total, n_events_tp, n_events_fa)."""
+    n = len(onset_times)
+    if n == 0:
+        return 0, 0, 0
+    order = np.argsort(onset_times)
+    ot = np.asarray(onset_times)[order]
+    mt = np.asarray(matched)[order]
+    n_total = n_tp = n_fa = 0
+    cur_tp = False
+    last_t = None
+    for t, m in zip(ot, mt):
+        if last_t is not None and (t - last_t) / np.timedelta64(1, "h") > gap_h:
+            n_total += 1
+            n_tp += int(cur_tp)
+            n_fa += int(not cur_tp)
+            cur_tp = False
+        cur_tp = cur_tp or bool(m)
+        last_t = t
+    n_total += 1
+    n_tp += int(cur_tp)
+    n_fa += int(not cur_tp)
+    return n_total, n_tp, n_fa
+
+
 def match_events(det: pd.DataFrame, cat: pd.DataFrame,
-                 tol_h: float = MATCH_TOL_H) -> dict:
-    """검출 이벤트(det) ↔ 카탈로그(cat) 매칭. in_saa 컬럼이 있으면 SAA 기원 FA 집계."""
+                 tol_h: float = MATCH_TOL_H, cluster_gap_h: float | None = None) -> dict:
+    """검출 이벤트(det) ↔ 카탈로그(cat) 매칭. in_saa 컬럼이 있으면 SAA 기원 FA 집계.
+    cluster_gap_h(기본 None -> tol_h와 동일): 이벤트 단위 지표(n_events_*/event_far)
+    클러스터링 간격 -- 모듈 docstring 참고."""
+    if cluster_gap_h is None:
+        cluster_gap_h = tol_h
     on   = pd.to_datetime(det["onset_time"]).values
     pk   = pd.to_datetime(det["peak_time"]).values
     cb   = cat.index.values
@@ -114,16 +156,23 @@ def match_events(det: pd.DataFrame, cat: pd.DataFrame,
         mask = (binned == lab)
         pfu_pod[lab] = (int(cat_hit[mask].sum()), int(mask.sum()))
 
+    n_hit_val = int(cat_hit.sum())
+    n_events_total, n_events_tp, n_events_fa = _cluster_events(on, det_matched, cluster_gap_h)
+    event_far = (n_events_fa / (n_hit_val + n_events_fa)
+                 if (n_hit_val + n_events_fa) > 0 else np.nan)
+
     return {
         "n_cat": n_cat, "n_det": n_det,
         "pod": cat_hit.sum() / n_cat if n_cat else np.nan,
         "far": (~det_matched).sum() / n_det if n_det else np.nan,
-        "n_hit": int(cat_hit.sum()), "n_fa": n_fa, "n_fa_saa": n_fa_saa,
+        "n_hit": n_hit_val, "n_fa": n_fa, "n_fa_saa": n_fa_saa,
         "fa_maglat": fa_maglat, "tp_maglat": tp_maglat, "fa_bmag": fa_bmag,
         "pfu_pod": pfu_pod,
         "onset_diff_h": np.array(onset_diff),
         "peak_diff_h":  np.array(peak_diff),
         "matched_pfu":  np.array(matched_pfu),
+        "n_events_total": n_events_total, "n_events_tp": n_events_tp,
+        "n_events_fa": n_events_fa, "event_far": event_far,
     }
 
 
@@ -159,6 +208,9 @@ def sweep_table(events_csv: Path, cat: pd.DataFrame,
             "tp_maglat_median": round(float(np.median(tp_maglat)), 2) if tp_maglat.size else np.nan,
             "fa_bmag_median":   round(float(np.median(fa_bmag)), 2) if fa_bmag.size else np.nan,
             "POD": round(r["pod"], 3), "FAR": round(r["far"], 3),
+            "n_events_total": r["n_events_total"], "n_events_tp": r["n_events_tp"],
+            "n_events_fa": r["n_events_fa"],
+            "event_FAR": round(r["event_far"], 3) if np.isfinite(r["event_far"]) else np.nan,
             "onset_diff_med_h":  round(float(np.median(od)), 2) if len(od) else np.nan,
             "onset_diff_mean_h": round(float(np.mean(od)),   2) if len(od) else np.nan,
             "onset_diff_std_h":  round(float(np.std(od)),    2) if len(od) else np.nan,
@@ -382,7 +434,7 @@ def run_matcher(catalog_label: str, default_io: str, out_prefix: str,
     print(f"[match] FINAL saved → {f_fin}")
 
     show = ["channel", "n_det", "n_hit", "n_fa", "n_fa_saa", "n_fa_saa_frac",
-            "POD", "FAR", "onset_diff_med_h"]
+            "POD", "FAR", "n_events_fa", "event_FAR", "onset_diff_med_h"]
     show = [c for c in show if c in fin.columns]
     print(fin[show].to_string(index=False))
 
