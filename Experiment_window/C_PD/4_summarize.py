@@ -262,6 +262,7 @@ def build_master_table(detectors: list[str], catalogs: list[str],
         # 2차 패스: 실제 행 + 검출 0인 채널의 명시적 행(POD=0.0, FAR=NaN) 방출.
         for parsed, catalog, tbl in buffered:
             present = set(tbl["channel"])
+            n_cat_val = len(_get_cat(catalog, era))
             for _, row in tbl.iterrows():
                 rows.append({
                     "detector": detector, "catalog": catalog,
@@ -275,6 +276,11 @@ def build_master_table(detectors: list[str], catalogs: list[str],
                     "n_events_total": row["n_events_total"],
                     "n_events_tp": row["n_events_tp"],
                     "n_events_fa": row["n_events_fa"],
+                    # ML 표준 명명(event 단위, _match_core_poes.match_events과 동일 정의) --
+                    # TP=n_hit/FP=n_events_fa/FN=n_cat-n_hit, precision=1-event_FAR,
+                    # recall=POD 별칭. 기존 POD/FAR/event_FAR/n_det/n_fa는 무변경 병기.
+                    "TP": row["TP"], "FP": row["FP"], "FN": row["FN"],
+                    "precision": row["precision"], "recall": row["recall"], "f1": row["f1"],
                     "n_det": row["n_det"], "n_hit": row["n_hit"],
                     "n_fa": row["n_fa"], "n_fa_saa": row["n_fa_saa"],
                     "fa_maglat_median": row["fa_maglat_median"],
@@ -295,6 +301,8 @@ def build_master_table(detectors: list[str], catalogs: list[str],
                     "POD": 0.0, "FAR": float("nan"),
                     "event_FAR": float("nan"),
                     "n_events_total": 0, "n_events_tp": 0, "n_events_fa": 0,
+                    "TP": 0, "FP": 0, "FN": n_cat_val,
+                    "precision": float("nan"), "recall": 0.0, "f1": float("nan"),
                     "n_det": 0, "n_hit": 0,
                     "n_fa": 0, "n_fa_saa": float("nan"),
                     "fa_maglat_median": float("nan"),
@@ -310,14 +318,21 @@ def build_master_table(detectors: list[str], catalogs: list[str],
 
 # ── STEP C: best_table ──────────────────────────────────────────────────
 
-CRITERIA = ("min_far", "min_event_far", "max_pod", "youden", "f1")
+CRITERIA = ("min_far", "min_event_far", "max_f1", "max_pod", "youden", "f1")
 
 # 기준별: (score 컬럼, score 오름차순 정렬 여부, tie-break 컬럼, tie-break 오름차순 여부)
 # min_event_far: n_det 기반 FAR 대신 event_FAR(24h 클러스터링, 같은 이벤트 중복재검출
 # 흡수) 기준 -- 중복 재검출이 심한 조합이 min_far에서 부당하게 유리해지는 착시 보정용.
+# f1/max_f1: build_master_table()이 채운 event 단위 f1(=TP/FP/FN 기반, _match_core_poes.
+# match_events과 동일 정의) 컬럼을 그대로 참조 -- 예전엔 _add_scores()가 n_fa 기반으로
+# 매번 새로 계산했지만, 이제 master_table에 이미 event 기준 f1이 영구 컬럼으로 있어서
+# 그걸 덮어쓰지 않도록 뺐다(아래 _add_scores 주석 참고). "f1"과 "max_f1"은 지금은
+# 완전히 같은 기준 -- max_f1은 하위호환 없이 이번에 추가된 이름이라 명시적으로 따로 둠.
+# youden은 여전히 FAR(n_det 기준) 그대로 -- event 버전 필요하면 추후 별도 요청.
 _CRITERION_KEY = {
     "min_far":       ("FAR",       True,  "POD", False),
     "min_event_far": ("event_FAR", True,  "POD", False),
+    "max_f1":         ("f1",       False, "POD", False),
     "max_pod":        ("POD",      False, "FAR", True),
     "youden":         ("youden",   False, "POD", False),
     "f1":             ("f1",       False, "POD", False),
@@ -326,22 +341,31 @@ _CRITERION_KEY = {
 # 예측 모델 라벨 앵커 후보 채널 (pro proton telescope p4/p5, tel0/tel90)
 ANCHOR_CHANNELS = ["pro_tel0_p4", "pro_tel0_p5", "pro_tel90_p4", "pro_tel90_p5"]
 
+# "함정 가드" 기본값 -- 무임계(k~0) 채널이 event 클러스터링으로 precision/f1이
+# 실제보다 좋아 보이는 것 방지. recall(=POD) 바닥 + n_det 상한 둘 다 필요(실측:
+# noaa19/omni_p9 k=0 조합은 recall=.905로 recall 필터만으론 안 걸리고, n_det=8832
+# (합리적 범위 밖 -- 정상 조합은 대개 수십~수백)로만 걸러짐).
+DEFAULT_MIN_RECALL = 0.5
+DEFAULT_MAX_N_DET  = 1000
+
 
 def _add_scores(df: pd.DataFrame) -> pd.DataFrame:
-    """youden/f1 score 컬럼을 부착 (min_far/max_pod는 기존 POD/FAR 그대로 사용)."""
+    """youden score 컬럼만 부착(FAR 기반, min_far/max_pod와 동일 계열).
+    f1/precision/recall은 build_master_table()이 이미 event 단위로 채워둔 영구
+    컬럼이라 여기서 다시 계산하면 덮어써버리므로(n_fa 기반으로 오염) 만들지 않는다."""
     df = df.copy()
     df["youden"] = df["POD"] - df["FAR"]
-    denom = df["n_hit"] + df["n_fa"]
-    prec = (df["n_hit"] / denom.replace(0, np.nan)).fillna(0.0)
-    rec = df["POD"]
-    f1_denom = prec + rec
-    df["f1"] = (2 * prec * rec / f1_denom.replace(0, np.nan)).fillna(0.0)
     return df
 
 
-def select_best(df: pd.DataFrame, criterion: str, min_n_hit: int) -> pd.DataFrame:
+def select_best(df: pd.DataFrame, criterion: str, min_n_hit: int,
+                min_recall: float = DEFAULT_MIN_RECALL,
+                max_n_det: int = DEFAULT_MAX_N_DET) -> pd.DataFrame:
     """(detector,catalog,baseline) 그룹별 criterion 1등 + 커버리지 컬럼.
-    FAR=NaN(detected=False) 행은 notna() 필터로 자동 제외, n_hit<min_n_hit도 제외."""
+    FAR=NaN(detected=False) 행은 notna() 필터로 자동 제외, n_hit<min_n_hit도 제외.
+    min_recall/max_n_det: 무임계 채널 함정 가드(항상 적용, DEFAULT_MIN_RECALL=.5가
+    바닥 -- --min-recall로 더 높일 수만 있고 이 바닥 밑으로는 못 내려감)."""
+    min_recall = max(min_recall, DEFAULT_MIN_RECALL)
     scored = _add_scores(df)
     score_col, ascending, tie_col, tie_ascending = _CRITERION_KEY[criterion]
 
@@ -350,10 +374,14 @@ def select_best(df: pd.DataFrame, criterion: str, min_n_hit: int) -> pd.DataFram
         detector, catalog, baseline = keys
         n_nan = int(grp["FAR"].isna().sum())
         n_low_nhit = int((grp["FAR"].notna() & (grp["n_hit"] < min_n_hit)).sum())
-        cand = grp[grp["FAR"].notna() & (grp["n_hit"] >= min_n_hit)]
+        base_ok = grp["FAR"].notna() & (grp["n_hit"] >= min_n_hit)
+        n_low_recall = int((base_ok & (grp["recall"] < min_recall)).sum())
+        n_high_ndet  = int((base_ok & (grp["n_det"] > max_n_det)).sum())
+        cand = grp[base_ok & (grp["recall"] >= min_recall) & (grp["n_det"] <= max_n_det)]
         if cand.empty:
             print(f"[best] WARNING {detector}/{catalog}/{baseline} [{criterion}]: "
-                  f"후보 없음 (FAR-NaN {n_nan}, n_hit<{min_n_hit} {n_low_nhit}) -> skip")
+                  f"후보 없음 (FAR-NaN {n_nan}, n_hit<{min_n_hit} {n_low_nhit}, "
+                  f"recall<{min_recall} {n_low_recall}, n_det>{max_n_det} {n_high_ndet}) -> skip")
             continue
         rank = cand[score_col].rank(method="min", ascending=ascending)
         ranked = cand.assign(_rank=rank).sort_values(
@@ -366,16 +394,23 @@ def select_best(df: pd.DataFrame, criterion: str, min_n_hit: int) -> pd.DataFram
         row["rank_of_best"]         = int(best["_rank"])
         row["n_excluded_far_nan"]   = n_nan
         row["n_excluded_low_nhit"]  = n_low_nhit
+        row["n_excluded_low_recall"] = n_low_recall
+        row["n_excluded_high_ndet"]  = n_high_ndet
         row.pop("_rank", None)
         out_rows.append(row)
         print(f"[best] {detector}/{catalog}/{baseline} [{criterion}]: "
-              f"후보 {len(cand)}개(FAR-NaN {n_nan}, n_hit<{min_n_hit} {n_low_nhit} 제외) "
-              f"-> channel={best['channel']} POD={best['POD']} FAR={best['FAR']}")
+              f"후보 {len(cand)}개(FAR-NaN {n_nan}, n_hit<{min_n_hit} {n_low_nhit}, "
+              f"recall<{min_recall} {n_low_recall}, n_det>{max_n_det} {n_high_ndet} 제외) "
+              f"-> channel={best['channel']} POD={best['POD']} FAR={best['FAR']} "
+              f"precision={best.get('precision','?')} recall={best.get('recall','?')} "
+              f"f1={best.get('f1','?')}")
     return pd.DataFrame(out_rows)
 
 
-def build_best_table_all_criteria(df: pd.DataFrame, min_n_hit: int) -> pd.DataFrame:
-    frames = [select_best(df, c, min_n_hit) for c in CRITERIA]
+def build_best_table_all_criteria(df: pd.DataFrame, min_n_hit: int,
+                                  min_recall: float = DEFAULT_MIN_RECALL,
+                                  max_n_det: int = DEFAULT_MAX_N_DET) -> pd.DataFrame:
+    frames = [select_best(df, c, min_n_hit, min_recall, max_n_det) for c in CRITERIA]
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
@@ -442,6 +477,15 @@ def main():
                     help="best_table.csv 선정 기준 (기본 min_far)")
     ap.add_argument("--min-n-hit", type=int, default=3,
                     help="best 후보에서 제외할 n_hit 최소치 (기본 3)")
+    ap.add_argument("--min-recall", type=float, default=DEFAULT_MIN_RECALL,
+                    help=f"best 후보 recall(=POD) 하한 (기본 {DEFAULT_MIN_RECALL} -- "
+                         f"이 값보다 낮게 지정해도 {DEFAULT_MIN_RECALL} 밑으로는 안 내려감. "
+                         "무임계 채널 함정 가드의 일부. 예: --min-recall 0.7")
+    ap.add_argument("--max-n-det", type=int, default=DEFAULT_MAX_N_DET,
+                    help=f"best 후보 n_det 상한 (기본 {DEFAULT_MAX_N_DET} -- 무임계(k~0) "
+                         "채널은 n_det가 수천~만 단위로 튀어 event 클러스터링만으로는 "
+                         "안 걸러지므로 별도 상한 필요. 실측 근거: noaa19/omni_p9 k=0 "
+                         "조합 recall=.905(정상 범위)인데 n_det=8832)")
     ap.add_argument("--best-out", default=None,
                     help="best_table.csv 경로 (기본: --out과 같은 폴더)")
     ap.add_argument("--best-by-criterion-out", default=None,
@@ -506,13 +550,13 @@ def main():
     anchor_out     = Path(args.anchor_out) if args.anchor_out \
                      else out.parent / "anchor_channels.csv"
 
-    best = select_best(df, args.criterion, args.min_n_hit)
+    best = select_best(df, args.criterion, args.min_n_hit, args.min_recall, args.max_n_det)
     best_out.parent.mkdir(parents=True, exist_ok=True)
     best.to_csv(best_out, index=False)
     print(f"[4_summarize] best_table[{args.criterion}] 저장 -> {best_out} ({len(best)} rows)")
     _print_anchor_highlight(best)
 
-    best_all = build_best_table_all_criteria(df, args.min_n_hit)
+    best_all = build_best_table_all_criteria(df, args.min_n_hit, args.min_recall, args.max_n_det)
     best_all.to_csv(best_all_out, index=False)
     print(f"[4_summarize] best_table_by_criterion 저장 -> {best_all_out} ({len(best_all)} rows)")
 

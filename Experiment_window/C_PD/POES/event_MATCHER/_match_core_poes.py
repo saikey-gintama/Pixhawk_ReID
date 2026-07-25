@@ -161,6 +161,19 @@ def match_events(det: pd.DataFrame, cat: pd.DataFrame,
     event_far = (n_events_fa / (n_hit_val + n_events_fa)
                  if (n_hit_val + n_events_fa) > 0 else np.nan)
 
+    # ML 표준 명명(event 단위) -- TP/FP/FN은 각각 n_hit/n_events_fa/n_cat-n_hit의 별칭,
+    # precision=1-event_far, recall=pod(둘 다 이미 위에서 정의된 값과 항등) -- 새로
+    # 정의하는 값이 아니라 ML 용어로 다시 이름 붙인 것뿐. POD/FAR/event_far 등
+    # 기존 키는 전부 무변경으로 병기.
+    tp_val = n_hit_val
+    fp_val = n_events_fa
+    fn_val = n_cat - n_hit_val
+    precision = (tp_val / (tp_val + fp_val)) if (tp_val + fp_val) > 0 else np.nan
+    recall = (tp_val / n_cat) if n_cat else np.nan
+    f1 = (2 * precision * recall / (precision + recall)
+          if np.isfinite(precision) and np.isfinite(recall) and (precision + recall) > 0
+          else np.nan)
+
     return {
         "n_cat": n_cat, "n_det": n_det,
         "pod": cat_hit.sum() / n_cat if n_cat else np.nan,
@@ -173,6 +186,8 @@ def match_events(det: pd.DataFrame, cat: pd.DataFrame,
         "matched_pfu":  np.array(matched_pfu),
         "n_events_total": n_events_total, "n_events_tp": n_events_tp,
         "n_events_fa": n_events_fa, "event_far": event_far,
+        "TP": tp_val, "FP": fp_val, "FN": fn_val,
+        "precision": precision, "recall": recall, "f1": f1,
     }
 
 
@@ -211,6 +226,12 @@ def sweep_table(events_csv: Path, cat: pd.DataFrame,
             "n_events_total": r["n_events_total"], "n_events_tp": r["n_events_tp"],
             "n_events_fa": r["n_events_fa"],
             "event_FAR": round(r["event_far"], 3) if np.isfinite(r["event_far"]) else np.nan,
+            # ML 표준 명명(event 단위) -- TP=n_hit/FP=n_events_fa/FN=n_cat-n_hit,
+            # precision=1-event_FAR, recall=POD의 별칭. 기존 POD/FAR/event_FAR는 무변경 병기.
+            "TP": r["TP"], "FP": r["FP"], "FN": r["FN"],
+            "precision": round(r["precision"], 3) if np.isfinite(r["precision"]) else np.nan,
+            "recall": round(r["recall"], 3) if np.isfinite(r["recall"]) else np.nan,
+            "f1": round(r["f1"], 3) if np.isfinite(r["f1"]) else np.nan,
             "onset_diff_med_h":  round(float(np.median(od)), 2) if len(od) else np.nan,
             "onset_diff_mean_h": round(float(np.mean(od)),   2) if len(od) else np.nan,
             "onset_diff_std_h":  round(float(np.std(od)),    2) if len(od) else np.nan,
