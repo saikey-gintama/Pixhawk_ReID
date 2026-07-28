@@ -32,6 +32,14 @@ POES 카탈로그 이벤트 vs raw count 프리커서를 눈으로 검사하는 
   빨강 세로선 : FSM onset FP (미매칭)
   crimson 세로선: FSM peak (사전계산 fsm_event_*.csv 있으면만 -- --peak 지정 시)
   검정 파선   : --mode detect 전용, 이 그림이 중심으로 삼은 검출 1개
+  (--states 지정 시에만 추가 -- 새 계산 없이 세그먼트 onset/peak/end 시각 구간 분할만)
+  연노랑 음영 : rising  = onset_time(또는 -precursor_h) ~ peak_time
+  빨강 음영   : event   = peak_time ~ min(peak_time+halfwidth_h, end_time)
+  하늘 음영   : decreasing = event 끝 ~ end_time
+  (표시 없음) : quiet   = 세그먼트 밖 전부(배경)
+  (--states --cluster 지정 시: 개별 검출 대신 _match_core_poes._cluster_indices(24h)로
+   묶은 '사건' 단위로 위 4상태 계산 -- 검출이 겹쳐 색이 범벅되는 것 방지)
+  (--zscore 지정 시: 하단에 --channels 전체의 rolling z-score 서브플롯 추가)
 
 사용:
   # 기본(raw) 모드 -- FSM 계산 스킵, 카탈로그 vs raw count만 육안 검사
@@ -62,6 +70,21 @@ POES 카탈로그 이벤트 vs raw count 프리커서를 눈으로 검사하는 
       --top-events 0 --hist
   python diag_rolling_threshold_poes.py --fsm w1k7 --onset 0 --channels pro_tel0_p5 \
       --top-events 0 --hist --hist-bounds=-90,-60,-30,0,30,60,90
+
+  # --states -- FSM 세그먼트를 quiet/rising/event/decreasing 4상태로 색칠 (예측 데이터셋
+  # 라벨 규칙 경계값을 대표 이벤트로 육안 확정). --precursor-h는 --rising-from
+  # onset_minus_precursor일 때만 의미 있음.
+  python diag_rolling_threshold_poes.py --fsm w7k7 --onset 0.1 --channels omni_p6 \
+      --states --top-events 5
+  python diag_rolling_threshold_poes.py --fsm w7k7 --onset 0.1 --channels omni_p6 \
+      --states --rising-from onset_minus_precursor --precursor-h 6 --event-halfwidth-h 2 \
+      --top-events 3
+
+  # --cluster -- 검출을 24h 클러스터링(사건 단위)해서 4상태 계산 (--states 필요).
+  # --zscore -- 하단에 --channels 전체 z-score 서브플롯 추가 (--fsm 필요).
+  python diag_rolling_threshold_poes.py --fsm w7k7 --onset 0.1 \
+      --channels omni_p6,omni_p7,pro_tel0_p5 \
+      --states --cluster --zscore --mode detect --detect-verdict all
 """
 from __future__ import annotations
 import argparse
@@ -345,21 +368,133 @@ def _draw_onset_peak_lines(ax, fsm: dict, t0, t1):
                    label="FSM peak" if i == 0 else None)
 
 
+_STATE_COLORS = {"rising": "#fff59d", "event": "#e74c3c", "decreasing": "#87ceeb"}
+
+
+def _segment_states(seg: dict, rising_from: str, event_halfwidth_h: float,
+                    precursor_h: float, channel: str) -> list[tuple]:
+    """세그먼트 1개(onset_time/peak_time/end_time 이미 있음, 신규 계산 없음) ->
+    [(start,end,state), ...] (rising/event/decreasing 최대 3구간, quiet는 배경이라
+    구간 없음). event = [peak_time, min(peak_time+event_halfwidth_h, end_time)],
+    decreasing = [event 끝, end_time](event 끝이 end_time과 같으면 생략).
+    rising = [onset_time(또는 onset_time-precursor_h), peak_time].
+    onset<peak<=end 순서가 깨지면(예: peak==onset) 경고 후 [onset,end] 전체를
+    event 하나로 대체(죽지 않음)."""
+    t0, tp, te = seg["onset_time"], seg["peak_time"], seg["end_time"]
+    if not (t0 < tp <= te):
+        print(f"[diag] WARNING {channel}: 세그먼트 뒤집힘(onset={t0} peak={tp} end={te}) "
+              f"-- event 단일 구간으로 대체")
+        return [(t0, te, "event")]
+    rising_start = (t0 - pd.Timedelta(hours=precursor_h)
+                    if rising_from == "onset_minus_precursor" else t0)
+    event_end = min(tp + pd.Timedelta(hours=event_halfwidth_h), te)
+    spans = [(rising_start, tp, "rising"), (tp, event_end, "event")]
+    if event_end < te:
+        spans.append((event_end, te, "decreasing"))
+    return spans
+
+
+def _cluster_segments(segs: list[dict], gap_h: float) -> list[dict]:
+    """개별 세그먼트를 core._cluster_indices(24h, 매처와 동일 정의 -- 재구현 아님, import)로
+    묶어 '사건' 단위 합성 세그먼트로 변환. 사건 = (첫 onset_time, 사건 내 최대
+    peak_count를 가진 세그먼트의 peak_time, 마지막 end_time). 새 계산 없음 -- 이미
+    detect_segments()가 만든 onset/peak/end/peak_count를 그대로 재사용."""
+    if not segs:
+        return []
+    onset_times = np.array([s["onset_time"] for s in segs])
+    groups = core._cluster_indices(onset_times, gap_h)
+    merged = []
+    for g in groups:
+        members = [segs[i] for i in g]
+        peak_seg = max(members, key=lambda s: s["peak_count"])
+        merged.append({
+            "onset_time": min(s["onset_time"] for s in members),
+            "peak_time": peak_seg["peak_time"],
+            "end_time": max(s["end_time"] for s in members),
+            "n_members": len(members),
+        })
+    return merged
+
+
+def _draw_states(ax, fsm: dict, t0, t1, rising_from: str, event_halfwidth_h: float,
+                 precursor_h: float, channel: str, cluster_gap_h: float | None = None) -> None:
+    """창 안(onset_time 기준, 다른 _draw_* 헬퍼와 동일 관례)의 FSM 세그먼트를
+    quiet(칠 안 함=배경)/rising/event/decreasing 4상태로 axvspan 색칠.
+    cluster_gap_h 지정 시(--cluster) 개별 세그먼트 대신 _cluster_segments()로 묶은
+    '사건' 단위로 4상태 계산 -- 검출이 겹쳐 색이 범벅되는 것 방지, 범례에
+    "검출 N개 -> 사건 M개" 추가 표기. 범례엔 상태별 색 + 창 내 세그먼트(또는
+    사건)들의 상태별 총 시간[h]도 표기."""
+    raw_segs = fsm["segs"]
+    n_det_win = sum(1 for s in raw_segs if t0 <= s["onset_time"] <= t1)
+    if cluster_gap_h is not None:
+        items = [m for m in _cluster_segments(raw_segs, cluster_gap_h)
+                if t0 <= m["onset_time"] <= t1]
+        n_events_win = len(items)
+    else:
+        items = [s for s in raw_segs if t0 <= s["onset_time"] <= t1]
+        n_events_win = n_det_win
+
+    all_spans: list[tuple] = []
+    for seg in items:
+        all_spans.extend(_segment_states(seg, rising_from, event_halfwidth_h,
+                                          precursor_h, channel))
+    if not all_spans:
+        return
+    totals = {"rising": 0.0, "event": 0.0, "decreasing": 0.0}
+    for s, e, state in all_spans:
+        totals[state] += (e - s).total_seconds() / 3600
+    drawn = {"rising": False, "event": False, "decreasing": False}
+    for s, e, state in all_spans:
+        lbl = f"{state} ({totals[state]:.1f}h)" if not drawn[state] else None
+        drawn[state] = True
+        ax.axvspan(s, e, color=_STATE_COLORS[state], alpha=0.35, zorder=1.5, label=lbl)
+    if cluster_gap_h is not None:
+        ax.plot([], [], color="none", label=f"detections {n_det_win} -> events {n_events_win}")
+
+
+def _draw_zscore_panel(axz, zscore_all: dict, t0, t1) -> None:
+    """--zscore 하단 서브플롯: zscore_all={channel: (cnt, bg)}의 각 채널에 대해
+    rolling z-score = (count-bg_median)/bg_std 를 겹쳐 그린다. bg는 fsm_engine의
+    compute_rolling_bg() 그대로 재사용(새 계산 없음, run()에서 채널별로 1회 사전계산)."""
+    for ch, (cnt_ch, bg_ch) in zscore_all.items():
+        std = bg_ch["bg_std"].replace(0, np.nan)
+        z = (cnt_ch - bg_ch["bg_median"]) / std
+        zwin = z.loc[t0:t1]
+        if not zwin.empty:
+            axz.plot(zwin.index, zwin.values, lw=0.8, alpha=0.85, label=ch)
+    axz.axhline(0, color="gray", lw=0.6, ls=":")
+    axz.set_ylabel("z-score", fontsize=9)
+    axz.grid(True, alpha=0.3)
+    axz.legend(fontsize=7, loc="upper left", framealpha=0.9, ncol=min(3, len(zscore_all)))
+
+
 def plot_one(channel: str, cnt: pd.Series, saa_mask: pd.Series | None,
             event_begin, event_max_time, event_pfu, t0, t1, out_path: Path,
-            detector: str, catalog: str, fsm: dict | None = None, polar: dict | None = None):
+            detector: str, catalog: str, fsm: dict | None = None, polar: dict | None = None,
+            states_cfg: dict | None = None, zscore_all: dict | None = None):
     """fsm=None -> raw count + 카탈로그/SAA 음영만. fsm={bg,thr,onset_times,onset_verdict,
-    peak_times,w,k} -> 롤링 배경/임계값/onset(TP/FP 색 구분)/peak 오버레이 추가.
+    peak_times,segs,w,k} -> 롤링 배경/임계값/onset(TP/FP 색 구분)/peak 오버레이 추가.
     polar={mask,median,band}(count 인덱스로 정렬된 극관 마스크 + pass median 시계열)
-    -> 극관 pass median 계단선/음영 추가."""
+    -> 극관 pass median 계단선/음영 추가. states_cfg={rising_from,event_halfwidth_h,
+    precursor_h,cluster_gap_h} -> quiet/rising/event/decreasing 4상태 색칠 추가(fsm 필요,
+    --states; cluster_gap_h 있으면 --cluster). zscore_all 지정 시(--zscore) 하단에
+    채널별 z-score 서브플롯 추가(상단은 raw count, sharex)."""
     win = cnt.loc[t0:t1]
 
-    fig, ax = plt.subplots(figsize=(13, 4.5))
+    if zscore_all is not None:
+        fig, (ax, axz) = plt.subplots(2, 1, figsize=(13, 6.5), sharex=True,
+                                      gridspec_kw={"height_ratios": [3, 1]})
+    else:
+        fig, ax = plt.subplots(figsize=(13, 4.5))
     ax.plot(win.index, win.values, color="black", lw=0.8, zorder=3, label="raw count")
 
     _draw_polar_median(ax, polar, t0, t1)
 
     if fsm is not None:
+        if states_cfg is not None:
+            _draw_states(ax, fsm, t0, t1, states_cfg["rising_from"],
+                        states_cfg["event_halfwidth_h"], states_cfg["precursor_h"], channel,
+                        cluster_gap_h=states_cfg.get("cluster_gap_h"))
         _draw_fsm_bg_thr(ax, fsm, t0, t1)
         _draw_onset_peak_lines(ax, fsm, t0, t1)
 
@@ -382,9 +517,14 @@ def plot_one(channel: str, cnt: pd.Series, saa_mask: pd.Series | None,
         title = (f"{channel}  detector={detector} catalog={catalog}  "
                 f"event={event_begin:%Y-%m-%d} pfu={event_pfu:.0f}")
     ax.set_title(title, fontsize=10)
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=7, loc="upper left", framealpha=0.9)
+    if zscore_all is not None:
+        _draw_zscore_panel(axz, zscore_all, t0, t1)
+        axz.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+        ax.tick_params(labelbottom=False)
+    else:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=120, bbox_inches="tight")
@@ -394,10 +534,12 @@ def plot_one(channel: str, cnt: pd.Series, saa_mask: pd.Series | None,
 
 def plot_one_detect(channel: str, cnt: pd.Series, saa_mask: pd.Series | None,
                     cat: pd.DataFrame, center_idx: int, t0, t1, out_path: Path,
-                    detector: str, catalog: str, fsm: dict, polar: dict | None = None):
+                    detector: str, catalog: str, fsm: dict, polar: dict | None = None,
+                    states_cfg: dict | None = None, zscore_all: dict | None = None):
     """--mode detect 전용: FSM 검출(onset) 중심 창. fsm['onset_times'][center_idx]가 창의 중심.
     plot_one과 동일한 오버레이 헬퍼(_draw_*)를 재사용하되, 카탈로그 음영은 창과 겹치는
-    카탈로그 이벤트 전부(0개 이상)를 표시 -- catalog 모드처럼 이벤트 1개 전제가 아니므로."""
+    카탈로그 이벤트 전부(0개 이상)를 표시 -- catalog 모드처럼 이벤트 1개 전제가 아니므로.
+    states_cfg/zscore_all은 plot_one과 동일 의미(--states[+--cluster]/--zscore)."""
     win = cnt.loc[t0:t1]
     center_t = fsm["onset_times"][center_idx]
     verdict  = bool(fsm["onset_verdict"][center_idx])
@@ -405,10 +547,18 @@ def plot_one_detect(channel: str, cnt: pd.Series, saa_mask: pd.Series | None,
     bmag     = fsm["onset_Bmag"][center_idx]
     in_saa_v = fsm["in_saa"][center_idx]
 
-    fig, ax = plt.subplots(figsize=(13, 4.5))
+    if zscore_all is not None:
+        fig, (ax, axz) = plt.subplots(2, 1, figsize=(13, 6.5), sharex=True,
+                                      gridspec_kw={"height_ratios": [3, 1]})
+    else:
+        fig, ax = plt.subplots(figsize=(13, 4.5))
     ax.plot(win.index, win.values, color="black", lw=0.8, zorder=3, label="raw count")
 
     _draw_polar_median(ax, polar, t0, t1)
+    if states_cfg is not None:
+        _draw_states(ax, fsm, t0, t1, states_cfg["rising_from"],
+                    states_cfg["event_halfwidth_h"], states_cfg["precursor_h"], channel,
+                    cluster_gap_h=states_cfg.get("cluster_gap_h"))
     _draw_fsm_bg_thr(ax, fsm, t0, t1)
     _draw_onset_peak_lines(ax, fsm, t0, t1)
     ax.axvline(center_t, color="black", ls="--", lw=1.6, alpha=0.9, zorder=5,
@@ -433,9 +583,14 @@ def plot_one_detect(channel: str, cnt: pd.Series, saa_mask: pd.Series | None,
             f"onset={center_t:%Y-%m-%d %H:%M}  verdict={verdict_s}  "
             f"maglat={maglat_s} Bmag={bmag_s} in_saa={in_saa_v}")
     ax.set_title(title, fontsize=9)
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=7, loc="upper left", framealpha=0.9)
+    if zscore_all is not None:
+        _draw_zscore_panel(axz, zscore_all, t0, t1)
+        axz.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+        ax.tick_params(labelbottom=False)
+    else:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=120, bbox_inches="tight")
@@ -559,7 +714,10 @@ def run(detector: str, catalog: str, channels: list[str],
        maglat_band_spec: str, maglat_band: tuple[float, float | None] | None,
        mode: str = "catalog", detect_top: int = 20, detect_verdict: str = "all",
        detect_maglat: tuple[float, float] | None = None,
-       hist: bool = False, hist_bounds: list[float] | None = None):
+       hist: bool = False, hist_bounds: list[float] | None = None,
+       states: bool = False, rising_from: str = "onset",
+       event_halfwidth_h: float = 3.0, precursor_h: float = 0.0,
+       cluster: bool = False, zscore: bool = False):
     io_name, cache_dir = _POES_IO[detector]
     io = core._import_event_io(io_name, str(cache_dir))
 
@@ -588,6 +746,22 @@ def run(detector: str, catalog: str, channels: list[str],
         polar_mask_geo = _maglat_mask_from_geo(geo, maglat_band)
         if polar_mask_geo is None:
             print("[diag] WARNING geo/lat-lon 로드 실패 -> 극관 pass 오버레이 생략")
+
+    # --zscore: --channels 전체의 (cnt,bg) 채널당 1회 사전계산(각 채널 고유 w는
+    # channel_params 재사용) -- 매 그림마다 하단 서브플롯에서 공유해서 다시 계산 안 함.
+    zscore_all = None
+    if zscore:
+        zscore_all = {}
+        for ch in channels:
+            w_ch, _k_ch = channel_params[ch]
+            cnt_ch = core._load_count_channel(io, str(cache_dir), ch)
+            if cnt_ch.empty:
+                print(f"[diag] --zscore: {ch} count 없음 -> z-score 패널에서 제외")
+                continue
+            bg_ch = fsm_engine.compute_rolling_bg(cnt_ch, int(w_ch), None, fsm_engine.BG_UPDATE_FREQ)
+            zscore_all[ch] = (cnt_ch, bg_ch)
+        print(f"[diag] --zscore: {len(zscore_all)}개 채널 z-score 사전계산 완료 "
+              f"({', '.join(zscore_all)})")
 
     mlat_suffix = (f"_mlat{maglat_band_spec.replace(':', '-')}"
                   if maglat_band_spec and maglat_band_spec != "60" else "")
@@ -626,7 +800,8 @@ def run(detector: str, catalog: str, channels: list[str],
                             onset_maglat=det_df["onset_maglat"].to_numpy(),
                             onset_Bmag=det_df["onset_Bmag"].to_numpy(),
                             in_saa=det_df["in_saa"].to_numpy(),
-                            onset_count=det_df["onset_count"].to_numpy())
+                            onset_count=det_df["onset_count"].to_numpy(),
+                            segs=segs)
         else:
             print(f"[diag] {channel}: count n={len(cnt)} (raw 모드 -- FSM 계산 생략)")
 
@@ -643,6 +818,14 @@ def run(detector: str, catalog: str, channels: list[str],
             print(f"[diag] {channel}: 극관 pass {len(pmedian)}개 검출 "
                   f"({_maglat_band_label(maglat_band)})")
 
+        states_cfg = None
+        if states:
+            states_cfg = dict(rising_from=rising_from, event_halfwidth_h=event_halfwidth_h,
+                              precursor_h=precursor_h,
+                              cluster_gap_h=core.MATCH_TOL_H if cluster else None)
+        states_suffix = ("_states" + ("_cluster" if cluster else "")) if states else ""
+        zscore_suffix = "_zscore" if zscore_all is not None else ""
+
         if mode == "catalog":
             for begin, row in events.iterrows():
                 t0 = begin - pd.Timedelta(days=pad_before)
@@ -654,9 +837,12 @@ def run(detector: str, catalog: str, channels: list[str],
                     suffix = f"_w{fsm_data['w']}k{fsm_engine._numstr(fsm_data['k'])}"
                 else:
                     suffix = ""
-                out_path = out_dir / f"{catalog}_{detector}_{channel}_{begin:%Y%m%d}{suffix}{mlat_suffix}.png"
+                out_path = (out_dir /
+                           f"{catalog}_{detector}_{channel}_{begin:%Y%m%d}{suffix}"
+                           f"{mlat_suffix}{states_suffix}{zscore_suffix}.png")
                 plot_one(channel, cnt, saa_mask, begin, row["max_time"], row["max_pfu"],
-                        t0, t1, out_path, detector, catalog, fsm=fsm_data, polar=polar_data)
+                        t0, t1, out_path, detector, catalog, fsm=fsm_data, polar=polar_data,
+                        states_cfg=states_cfg, zscore_all=zscore_all)
                 saved.append(out_path)
         else:
             indices = _select_detect_indices(fsm_data, detect_top, detect_verdict, detect_maglat)
@@ -673,9 +859,10 @@ def run(detector: str, catalog: str, channels: list[str],
                 verdict_s = "TP" if fsm_data["onset_verdict"][idx] else "FP"
                 out_path = (out_dir /
                            f"detect_{catalog}_{detector}_{channel}_{onset_t:%Y%m%d_%H%M}_"
-                           f"{verdict_s}{suffix}{mlat_suffix}.png")
+                           f"{verdict_s}{suffix}{mlat_suffix}{states_suffix}{zscore_suffix}.png")
                 plot_one_detect(channel, cnt, saa_mask, cat, idx, t0, t1, out_path,
-                               detector, catalog, fsm=fsm_data, polar=polar_data)
+                               detector, catalog, fsm=fsm_data, polar=polar_data,
+                               states_cfg=states_cfg, zscore_all=zscore_all)
                 saved.append(out_path)
 
     print(f"\n[diag] 완료: {len(saved)}장 저장 -> {out_dir}")
@@ -747,6 +934,31 @@ def main():
                          '첫 값이 음수라 argparse가 옵션으로 오인식하므로 '
                          '--hist-bounds=-90,-60,-30,0,30,60,90 처럼 "="로 붙여쓸 것 '
                          '(공백으로 띄우면 "expected one argument" 에러).')
+    ap.add_argument("--states", action="store_true",
+                    help="FSM 세그먼트를 quiet(칠 안 함)/rising/event/decreasing 4상태로 "
+                         "axvspan 색칠 (--fsm 지정 시에만 유효). 새 계산 없음 -- 세그먼트의 "
+                         "onset_time/peak_time/end_time을 구간 분할만. 범례에 상태별 총 "
+                         "시간[h] 표기.")
+    ap.add_argument("--rising-from", default=None, choices=["onset", "onset_minus_precursor"],
+                    help="--states 전용: rising 구간 시작점 (기본 onset). "
+                         "onset_minus_precursor면 onset 전 --precursor-h 시간을 rising에 "
+                         "포함(프리커서를 rising으로 볼지 실험용).")
+    ap.add_argument("--event-halfwidth-h", type=float, default=None,
+                    help="--states 전용: event 구간 폭[h] (기본 3.0). "
+                         "event = [peak_time, min(peak_time+halfwidth, end_time)].")
+    ap.add_argument("--precursor-h", type=float, default=None,
+                    help="--states 전용: --rising-from onset_minus_precursor일 때만 유효, "
+                         "onset 전 며칠을 rising에 포함할지[h] (기본 0).")
+    ap.add_argument("--cluster", action="store_true",
+                    help="--states 전용: 개별 검출 대신 _match_core_poes._cluster_indices"
+                         "(24h, 매처와 동일 정의 -- import만, 재구현 아님)로 묶은 '사건' "
+                         "단위로 4상태 계산. 검출이 여러 개 겹쳐 색이 범벅되는 것 방지. "
+                         "범례에 \"검출 N개 -> 사건 M개\" 추가 표기.")
+    ap.add_argument("--zscore", action="store_true",
+                    help="--fsm 지정 시에만 유효. --channels로 준 채널 전체의 rolling "
+                         "z-score=(count-bg_median)/bg_std를 하단 서브플롯에 겹쳐 그림 "
+                         "(상단은 기존과 동일한 raw count+오버레이). bg는 fsm_engine의 "
+                         "롤링 배경 그대로 재사용(채널별 channel_params의 w로 1회 계산).")
     ap.add_argument("--out", default=str(_DEFAULT_OUT))
     args = ap.parse_args()
 
@@ -762,6 +974,10 @@ def main():
             raise SystemExit("[diag] --mode detect는 --fsm 지정 시에만 유효합니다 (FSM onset 필요).")
         if args.hist:
             raise SystemExit("[diag] --hist는 --fsm 지정 시에만 유효합니다 (TP/FP 판정 필요).")
+        if args.states:
+            raise SystemExit("[diag] --states는 --fsm 지정 시에만 유효합니다 (FSM 세그먼트 필요).")
+        if args.zscore:
+            raise SystemExit("[diag] --zscore는 --fsm 지정 시에만 유효합니다 (rolling bg 필요).")
 
     if args.mode != "detect":
         locked_detect = {"--detect-top": args.detect_top, "--detect-verdict": args.detect_verdict,
@@ -773,6 +989,24 @@ def main():
 
     if args.hist_bounds and not args.hist:
         raise SystemExit("[diag] --hist-bounds는 --hist 지정 시에만 유효합니다.")
+
+    if not args.states:
+        locked_states = {"--rising-from": args.rising_from,
+                         "--event-halfwidth-h": args.event_halfwidth_h,
+                         "--precursor-h": args.precursor_h}
+        bad_states = [name for name, v in locked_states.items() if v is not None]
+        if bad_states:
+            raise SystemExit(f"[diag] {', '.join(bad_states)}는 --states 지정 시에만 유효합니다.")
+    else:
+        if args.event_halfwidth_h is not None and args.event_halfwidth_h <= 0:
+            raise SystemExit(f"[diag] --event-halfwidth-h는 0보다 커야 합니다 "
+                             f"(받은 값: {args.event_halfwidth_h})")
+        if args.precursor_h is not None and args.precursor_h < 0:
+            raise SystemExit(f"[diag] --precursor-h는 0 이상이어야 합니다 "
+                             f"(받은 값: {args.precursor_h})")
+
+    if args.cluster and not args.states:
+        raise SystemExit("[diag] --cluster는 --states 지정 시에만 유효합니다.")
 
     channels = [c.strip() for c in args.channels.split(",") if c.strip()]
 
@@ -792,13 +1026,19 @@ def main():
     detect_verdict = args.detect_verdict if args.detect_verdict is not None else "all"
     detect_maglat = _parse_detect_maglat(args.detect_maglat)
     hist_bounds = _parse_hist_bounds(args.hist_bounds) if args.hist_bounds else None
+    rising_from = args.rising_from if args.rising_from is not None else "onset"
+    event_halfwidth_h = args.event_halfwidth_h if args.event_halfwidth_h is not None else 3.0
+    precursor_h = args.precursor_h if args.precursor_h is not None else 0.0
 
     run(args.detector, args.catalog, channels, fsm_enabled, channel_params,
        onset_floor, args.peak, args.pad_before, args.pad_after,
        args.top_events, args.all_events, Path(args.out),
        args.maglat_band, maglat_band,
        mode=args.mode, detect_top=detect_top, detect_verdict=detect_verdict,
-       detect_maglat=detect_maglat, hist=args.hist, hist_bounds=hist_bounds)
+       detect_maglat=detect_maglat, hist=args.hist, hist_bounds=hist_bounds,
+       states=args.states, rising_from=rising_from,
+       event_halfwidth_h=event_halfwidth_h, precursor_h=precursor_h,
+       cluster=args.cluster, zscore=args.zscore)
 
 
 if __name__ == "__main__":

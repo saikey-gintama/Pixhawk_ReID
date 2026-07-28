@@ -77,32 +77,38 @@ def det_matched_mask(det: pd.DataFrame, cat: pd.DataFrame,
     return det_matched
 
 
-def _cluster_events(onset_times: np.ndarray, matched: np.ndarray, gap_h: float) -> tuple[int, int, int]:
-    """검출을 onset_time 시간순 정렬 후 gap>gap_h[h]일 때마다 새 클러스터를 여는
-    방식으로 '고유 검출 사건' 단위로 묶는다(apply_refractory()류 sequential-gap
-    클러스터링과 동일 개념, 매처 쪽 재구현). matched[i]==True(카탈로그 매칭)인
-    검출이 클러스터 안에 하나라도 있으면 그 클러스터는 TP, 없으면 FP(오탐) 클러스터.
-    반환: (n_events_total, n_events_tp, n_events_fa)."""
+def _cluster_indices(onset_times: np.ndarray, gap_h: float) -> list[np.ndarray]:
+    """onset_times를 시간순 정렬 후 gap>gap_h[h]일 때마다 새 클러스터를 여는 방식으로
+    '고유 검출 사건' 단위로 묶는다(apply_refractory()류 sequential-gap 클러스터링과
+    동일 개념). 각 클러스터에 속하는 원본(정렬 전) 인덱스 배열의 리스트를 반환 --
+    _cluster_events()가 집계(카운트)만 필요할 때 이 함수를 감싸 쓰고,
+    diag_rolling_threshold_poes.py의 --cluster(실제 그룹 멤버십 필요)도 재구현 없이
+    이 함수를 그대로 재사용(det_matched_mask를 diag가 재사용하는 것과 동일 패턴)."""
     n = len(onset_times)
     if n == 0:
-        return 0, 0, 0
+        return []
     order = np.argsort(onset_times)
     ot = np.asarray(onset_times)[order]
-    mt = np.asarray(matched)[order]
-    n_total = n_tp = n_fa = 0
-    cur_tp = False
-    last_t = None
-    for t, m in zip(ot, mt):
-        if last_t is not None and (t - last_t) / np.timedelta64(1, "h") > gap_h:
-            n_total += 1
-            n_tp += int(cur_tp)
-            n_fa += int(not cur_tp)
-            cur_tp = False
-        cur_tp = cur_tp or bool(m)
-        last_t = t
-    n_total += 1
-    n_tp += int(cur_tp)
-    n_fa += int(not cur_tp)
+    groups: list[list[int]] = []
+    cur = [int(order[0])]
+    for i in range(1, n):
+        if (ot[i] - ot[i - 1]) / np.timedelta64(1, "h") > gap_h:
+            groups.append(cur)
+            cur = []
+        cur.append(int(order[i]))
+    groups.append(cur)
+    return [np.array(g, dtype=int) for g in groups]
+
+
+def _cluster_events(onset_times: np.ndarray, matched: np.ndarray, gap_h: float) -> tuple[int, int, int]:
+    """_cluster_indices()로 묶은 뒤, matched[i]==True(카탈로그 매칭)인 검출이 클러스터
+    안에 하나라도 있으면 그 클러스터는 TP, 없으면 FP(오탐) 클러스터로 집계.
+    반환: (n_events_total, n_events_tp, n_events_fa)."""
+    groups = _cluster_indices(onset_times, gap_h)
+    matched = np.asarray(matched)
+    n_total = len(groups)
+    n_tp = sum(1 for g in groups if np.any(matched[g]))
+    n_fa = n_total - n_tp
     return n_total, n_tp, n_fa
 
 
