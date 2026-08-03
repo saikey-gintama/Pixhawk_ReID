@@ -40,14 +40,26 @@ CUSUM 실험 때 겪은 것과 같은 계열):
   GroupKFold의 group 컬럼으로 쓴다(크롭 필터를 거친 모든 윈도우는 episode_id>=0).
 
 출력 2종 (--out-dir, 기본 predict_v0/dataset_v0/):
-  timeseries.parquet : 15분 격자 전체(라벨 있는 채널 count 시계열 전 구간, 크롭 없음) --
-      time, count, zscore, label(0/1/2), event_id(-1=quiet), ambiguous_peak
-  windows.parquet     : 위 timeseries에서 이벤트 중심 크롭 구간만, 2궤도(기본 14샘플)
-      슬라이딩 윈도우(stride=1)로 만든 학습 샘플 -- window_end_time, z_lag13..z_lag0,
-      label, event_id, episode_id, ambiguous_peak
+  timeseries_{detector}_{primary}.parquet : 15분 격자 전체(라벨 앵커 채널 count 시계열
+      전 구간, 크롭 없음) -- time, count, zscore, label(0/1/2), event_id(-1=quiet),
+      ambiguous_peak. --channels를 여러 개 줘도 이 파일은 항상 첫 채널(primary) 것 하나.
+  windows_{detector}_{tag}.parquet : 위 timeseries에서 이벤트 중심 크롭 구간만, 2궤도
+      (기본 14샘플) 슬라이딩 윈도우(stride=1)로 만든 학습 샘플.
+      --channels 1개(기본): window_end_time, z_lag13..z_lag0, label, event_id,
+        episode_id, ambiguous_peak (tag=그 채널명, 기존 출력과 완전 동일).
+      --channels 여러 개: z_lag* 대신 z_ch{i}_lag13..z_ch{i}_lag0 (i=0이 첫 채널=라벨
+        앵커, i=1..이 추가 채널) -- 라벨/event_id/episode_id는 항상 첫 채널(라벨 앵커)
+        기준 그대로(추가 채널은 피처만 보탬). tag="-".join(channels).
+
+다채널 확장 메모: manual_labels는 첫 채널(예: omni_p6)에만 있다고 가정 -- 라벨/
+이벤트 구간/episode 그룹핑은 전부 그 채널 기준으로 고정, 추가 채널(예: omni_p7,
+pro_tel0_p5)은 같은 detector의 자기 count 시계열에서 자기 rolling bg로 z-score를
+독립 계산한 뒤 라벨 앵커 채널의 시간 인덱스에 reindex+ffill로 맞춘다(발산 가드
+Z_EPS/Z_CLIP은 모든 채널에 동일 적용, 새 공식 아님).
 
 사용:
-  python 2_build_dataset.py --detector metop03 --channel omni_p6 --window 14 --bg-window-days 7
+  python 2_build_dataset.py --detector metop03 --channels omni_p6 --window 14 --bg-window-days 7
+  python 2_build_dataset.py --detector metop03 --channels omni_p6,omni_p7,pro_tel0_p5
 """
 from __future__ import annotations
 import argparse
@@ -161,15 +173,39 @@ def assign_episode(times: pd.Series, episodes: pd.DataFrame) -> np.ndarray:
     return ep_id
 
 
-def make_windows(ts: pd.DataFrame, window: int, episodes: pd.DataFrame) -> pd.DataFrame:
-    z = ts["zscore"].values
+def compute_channel_zscore(detector: str, channel: str, bg_window_days: int,
+                           ref_index: pd.DatetimeIndex) -> pd.Series:
+    """추가 채널(라벨 앵커가 아닌) 하나의 z-score를 독립 계산해 ref_index(라벨 앵커
+    채널의 시간 인덱스)에 맞춘다 -- make_timeseries와 동일 공식/가드, 새 계산 아님."""
+    cnt_ch, _ = load_channel_series(detector, channel)
+    bg_ch = fsm_engine.compute_rolling_bg(cnt_ch, bg_window_days, None, fsm_engine.BG_UPDATE_FREQ)
+    std_safe = bg_ch["bg_std"].clip(lower=Z_EPS)
+    z_ch = ((cnt_ch - bg_ch["bg_median"]) / std_safe).clip(-Z_CLIP, Z_CLIP)
+    return z_ch.reindex(ref_index).ffill()
+
+
+def _lag_cols(z_values: np.ndarray, window: int, prefix: str) -> dict:
+    windows = np.lib.stride_tricks.sliding_window_view(z_values, window)  # (n-window+1, window)
+    return {f"{prefix}{window-1-j}": windows[:, j] for j in range(window)}
+
+
+def make_windows(ts: pd.DataFrame, window: int, episodes: pd.DataFrame,
+                 extra_z: dict[str, pd.Series] | None = None) -> pd.DataFrame:
+    """extra_z가 없으면(단일채널, 기본) 기존과 완전히 동일한 z_lag13..z_lag0 출력.
+    extra_z={채널명: z-series}가 있으면(다채널) z_ch{i}_lag13..z_ch{i}_lag0로 채널별
+    피처를 나란히 저장(i=0=라벨 앵커 채널=ts['zscore'], i=1..=extra_z 순서)."""
     n = len(ts)
     if n < window:
         return pd.DataFrame()
-    # sliding_window_view: 행 i = z[i-window+1 .. i] (라벨/이벤트id는 윈도우 끝 시점 기준)
-    windows = np.lib.stride_tricks.sliding_window_view(z, window)  # shape (n-window+1, window)
     end_idx = np.arange(window - 1, n)
-    cols = {f"z_lag{window-1-j}": windows[:, j] for j in range(window)}
+
+    if not extra_z:
+        cols = _lag_cols(ts["zscore"].values, window, "z_lag")
+    else:
+        cols = {}
+        z_series_list = [ts["zscore"]] + list(extra_z.values())
+        for i, zser in enumerate(z_series_list):
+            cols.update(_lag_cols(zser.values, window, f"z_ch{i}_lag"))
     out = pd.DataFrame(cols)
     out.insert(0, "window_end_time", ts.index[end_idx])
     out["label"] = ts["label"].values[end_idx]
@@ -191,9 +227,11 @@ def make_windows(ts: pd.DataFrame, window: int, episodes: pd.DataFrame) -> pd.Da
 
 def main():
     global Z_EPS, Z_CLIP
-    ap = argparse.ArgumentParser(description="manual_labels -> 예측 모델 v0 데이터셋(3클래스)")
+    ap = argparse.ArgumentParser(description="manual_labels -> 예측 모델 v0 데이터셋(3클래스, 단일/다채널)")
     ap.add_argument("--detector", default="metop03")
-    ap.add_argument("--channel", default="omni_p6")
+    ap.add_argument("--channels", default="omni_p6",
+                    help="콤마구분 채널 목록. 첫 채널이 라벨 앵커(manual_labels 보유 채널) -- "
+                         "예: omni_p6  또는  omni_p6,omni_p7,pro_tel0_p5")
     ap.add_argument("--window", type=int, default=WINDOW, help="2궤도 ~= 206분 / 15분 샘플 ~= 14")
     ap.add_argument("--bg-window-days", type=int, default=7, help="rolling bg 창(일) -- 1_check_labels와 동일 w 권장")
     ap.add_argument("--pad-before-days", type=int, default=PAD_BEFORE_DAYS)
@@ -204,12 +242,17 @@ def main():
     args = ap.parse_args()
     Z_EPS, Z_CLIP = args.z_eps, args.z_clip
 
-    labels_path = HERE / "manual_labels" / f"manual_labels_{args.detector}_{args.channel}.csv"
+    channels = [c.strip() for c in args.channels.split(",") if c.strip()]
+    primary = channels[0]
+    if len(channels) > 1:
+        print(f"[dataset_v0] 다채널 모드: 라벨 앵커={primary}, 추가 채널={channels[1:]}")
+
+    labels_path = HERE / "manual_labels" / f"manual_labels_{args.detector}_{primary}.csv"
     df = load_manual_labels(labels_path)
     comp = report_completeness(df)
     events = build_reconciled_events(df, comp["split_pairs"])
 
-    cnt, _ = load_channel_series(args.detector, args.channel)
+    cnt, _ = load_channel_series(args.detector, primary)
     bg = fsm_engine.compute_rolling_bg(cnt, args.bg_window_days, None, fsm_engine.BG_UPDATE_FREQ)
 
     peak_lt2_ids = set(events.loc[events["peak_count"] < 2, "event_id"])
@@ -226,18 +269,26 @@ def main():
     print(f"[dataset_v0] episode {len(episodes)}개 (이벤트 {len(spans)}개가 겹치는 padded 구간끼리 병합됨, "
           f"병합된 episode={int((episodes['n_events'] > 1).sum())}개)")
 
-    windows = make_windows(ts, args.window, episodes)
+    extra_z = None
+    if len(channels) > 1:
+        extra_z = {}
+        for ch in channels[1:]:
+            print(f"[dataset_v0] 추가 채널 {ch} z-score 계산 중 (bg_window_days={args.bg_window_days})")
+            extra_z[ch] = compute_channel_zscore(args.detector, ch, args.bg_window_days, ts.index)
+
+    windows = make_windows(ts, args.window, episodes, extra_z=extra_z)
     for lab, name in LABEL_NAMES.items():
         n = int((windows["label"] == lab).sum())
         print(f"[dataset_v0] windows: label={lab}({name}) {n}개 ({n/len(windows)*100:.2f}%)")
     print(f"[dataset_v0] windows 고유 event_id(라벨 소유) {windows.loc[windows['event_id']>=0,'event_id'].nunique()}개, "
           f"고유 episode_id(그룹) {windows['episode_id'].nunique()}개")
 
+    tag = primary if len(channels) == 1 else "-".join(channels)
     out_dir = Path(args.out_dir) if args.out_dir else HERE / "dataset_v0"
     out_dir.mkdir(parents=True, exist_ok=True)
-    ts.reset_index().to_parquet(out_dir / f"timeseries_{args.detector}_{args.channel}.parquet", index=False)
-    windows.to_parquet(out_dir / f"windows_{args.detector}_{args.channel}.parquet", index=False)
-    print(f"\n[dataset_v0] 저장 완료 -> {out_dir}")
+    ts.reset_index().to_parquet(out_dir / f"timeseries_{args.detector}_{primary}.parquet", index=False)
+    windows.to_parquet(out_dir / f"windows_{args.detector}_{tag}.parquet", index=False)
+    print(f"\n[dataset_v0] 저장 완료 -> {out_dir}  (timeseries: {primary}, windows: {tag})")
 
 
 if __name__ == "__main__":

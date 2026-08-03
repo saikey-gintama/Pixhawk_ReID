@@ -70,9 +70,18 @@ def make_split(windows: pd.DataFrame, n_splits: int, fold: int):
     return train_idx, val_idx
 
 
-def train_tcn(X_train, y_train, X_val, y_val, class_weight):
-    model = TCNClassifier(input_size=1, num_channels=(16, 16, 16), kernel_size=3, dropout=0.2, n_classes=3)
-    opt = torch.optim.Adam(model.parameters(), lr=LR)
+def train_tcn(X_train, y_train, X_val, y_val, class_weight,
+             epochs: int = EPOCHS, patience: int | None = None,
+             input_size: int = 1, n_classes: int = 3,
+             lr: float = LR, batch_size: int = BATCH_SIZE, verbose: bool = True):
+    """epochs/patience/input_size/n_classes는 전부 기본값이 기존 Step 1/2/3의 하드코딩
+    (30epoch·조기종료 없음·단일채널·3클래스)과 동일해서, 이 4개를 안 넘기는 기존 호출
+    (4_eval.py/5_diag.py)은 동작이 그대로다. train_experiment.py가 다채널
+    (input_size=len(channels))·이진(n_classes=2)·긴 학습+조기종료(epochs/patience)를
+    쓰기 위해 이 함수 하나를 그대로 재사용(재구현 없음)."""
+    model = TCNClassifier(input_size=input_size, num_channels=(16, 16, 16), kernel_size=3,
+                          dropout=0.2, n_classes=n_classes)
+    opt = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss(weight=torch.tensor(class_weight, dtype=torch.float32))
 
     Xtr = torch.tensor(X_train, dtype=torch.float32)
@@ -82,14 +91,16 @@ def train_tcn(X_train, y_train, X_val, y_val, class_weight):
 
     n = len(Xtr)
     history = {"train_loss": [], "val_loss": [], "val_macro_f1": []}
-    best_f1, best_state = -1.0, None
+    best_f1, best_state, best_epoch = -1.0, None, 0
+    epochs_since_improve = 0
+    stopped_epoch = epochs
 
-    for epoch in range(1, EPOCHS + 1):
+    for epoch in range(1, epochs + 1):
         model.train()
         perm = torch.randperm(n)
         total_loss = 0.0
-        for i in range(0, n, BATCH_SIZE):
-            idx = perm[i:i + BATCH_SIZE]
+        for i in range(0, n, batch_size):
+            idx = perm[i:i + batch_size]
             xb, yb = Xtr[idx], ytr[idx]
             opt.zero_grad()
             out = model(xb)
@@ -109,14 +120,27 @@ def train_tcn(X_train, y_train, X_val, y_val, class_weight):
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_loss)
         history["val_macro_f1"].append(val_f1)
-        print(f"[tcn] epoch {epoch:02d}  train_loss={train_loss:.4f}  "
-              f"val_loss={val_loss:.4f}  val_macro_f1={val_f1:.4f}")
+        if verbose:
+            print(f"[tcn] epoch {epoch:02d}  train_loss={train_loss:.4f}  "
+                  f"val_loss={val_loss:.4f}  val_macro_f1={val_f1:.4f}")
 
         if val_f1 > best_f1:
             best_f1 = val_f1
             best_state = {k: v.clone() for k, v in model.state_dict().items()}
+            best_epoch = epoch
+            epochs_since_improve = 0
+        else:
+            epochs_since_improve += 1
+
+        if patience is not None and epochs_since_improve >= patience:
+            stopped_epoch = epoch
+            if verbose:
+                print(f"[tcn] early stop @ epoch {epoch} (best epoch {best_epoch}, patience={patience})")
+            break
 
     model.load_state_dict(best_state)
+    history["best_epoch"] = best_epoch
+    history["stopped_epoch"] = stopped_epoch
     return model, history, best_f1
 
 

@@ -80,7 +80,9 @@ class TemporalConvNet(nn.Module):
 
 class TCNClassifier(nn.Module):
     """TemporalConvNet + 마지막 시점(causal이므로 '현재') 은닉상태에 선형 분류 head.
-    입력 x: (batch, seq_len) 단일 피처(z-score) -> 채널 1로 unsqueeze."""
+    입력 x: (batch, seq_len) 단일 피처(z-score, input_size=1 가정) -> 채널 1로 unsqueeze.
+    다채널 입력(x: (batch, n_channels, seq_len), input_size=n_channels)도 그대로 받는다
+    -- 이미 채널 축이 있으면 unsqueeze 생략(train_experiment.py의 다채널 실험용)."""
 
     def __init__(self, input_size: int = 1, num_channels=(16, 16, 16), kernel_size: int = 3,
                  dropout: float = 0.2, n_classes: int = 3):
@@ -89,7 +91,8 @@ class TCNClassifier(nn.Module):
         self.fc = nn.Linear(num_channels[-1], n_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x.unsqueeze(1)          # (batch, 1, seq_len)
+        if x.dim() == 2:
+            x = x.unsqueeze(1)      # (batch, seq_len) -> (batch, 1, seq_len)
         y = self.tcn(x)              # (batch, channels, seq_len)
         y = y[:, :, -1]               # 마지막(=현재) 시점
         return self.fc(y)
