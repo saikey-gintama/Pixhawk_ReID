@@ -1,0 +1,16 @@
+detector,catalog,baseline,channel,best_POD,best_POD_FAR,best_POD_n_hit,best_POD_win,best_POD_k_or_mult,best_POD_onset,best_FAR,best_FAR_POD,best_FAR_n_hit,best_FAR_win,best_FAR_k_or_mult,best_FAR_onset
+metop03,swpc,blc1_lowe,pro_tel0_p4,0.05,0.93,8,10.0,1.25,0.1,0.896,0.05,8,30.0,1.25,0.1
+metop03,swpc,blc1_lowe,pro_tel0_p5,0.05,0.919,8,15.0,1.25,0.1,0.902,0.05,8,30.0,1.25,0.1
+metop03,swpc,blc1_lowe,pro_tel90_p4,0.025,0.959,4,10.0,1.25,0.1,0.951,0.025,4,30.0,1.25,0.1
+metop03,swpc,blc1_lowe,pro_tel90_p5,0.044,0.92,7,10.0,1.25,0.1,0.889,0.044,7,30.0,1.25,0.5
+metop03,swpc,quietoff,pro_tel0_p4,0.994,0.875,158,1.0,0.0,0.0,0.807,0.623,99,7.0,1.0,0.0
+metop03,swpc,quietoff,pro_tel0_p5,1.0,0.872,159,30.0,0.0,0.0,0.843,0.063,10,3.0,0.0,0.3
+metop03,swpc,quietoff,pro_tel90_p4,0.987,0.877,157,1.0,0.0,0.0,0.808,0.535,85,10.0,1.0,0.0
+metop03,swpc,quietoff,pro_tel90_p5,0.994,0.878,158,1.0,0.0,0.0,0.853,0.075,12,30.0,15.0,0.1
+noaa19,swpc,blc1_lowe,pro_tel0_p4,0.031,0.94,5,3.0,1.25,0.1,0.94,0.031,5,3.0,1.25,0.1
+noaa19,swpc,blc1_lowe,pro_tel0_p5,0.031,0.945,5,10.0,1.25,0.1,0.933,0.031,5,15.0,1.25,0.1
+noaa19,swpc,blc1_lowe,pro_tel90_p5,0.025,0.955,4,10.0,1.25,0.1,0.94,0.019,3,30.0,1.25,0.1
+noaa19,swpc,quietoff,pro_tel0_p4,0.843,0.872,134,10.0,0.0,0.0,0.849,0.384,61,30.0,1.0,0.0
+noaa19,swpc,quietoff,pro_tel0_p5,0.855,0.881,136,30.0,0.0,0.0,0.842,0.107,17,7.0,0.0,0.1
+noaa19,swpc,quietoff,pro_tel90_p4,0.849,0.892,135,1.0,0.0,0.0,0.854,0.321,51,30.0,1.0,0.1
+noaa19,swpc,quietoff,pro_tel90_p5,0.855,0.88,136,30.0,0.0,0.0,0.852,0.082,13,30.0,5.0,0.1

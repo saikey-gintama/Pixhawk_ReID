@@ -231,7 +231,7 @@ def get_geo(source: Union[str, Path],
         geo = geo.loc[t_start:t_end]
     if with_bmag:
         try:
-            import coords_igrf
+            import _coords_igrf as coords_igrf
             geo = coords_igrf.add_bmag_maglat(geo)
         except Exception as e:
             print(f'[poes_metop03_io] WARN Bmag/maglat 파생 실패: {e}')

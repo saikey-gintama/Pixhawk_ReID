@@ -79,6 +79,8 @@ def parse_args():
     p.add_argument("--quiet-days", type=int, default=(BG_QUIET_DAYS if BG_QUIET_DAYS else 0),
                    help="quiet-day selection N; 0 = use whole window "
                         f"(default {BG_QUIET_DAYS if BG_QUIET_DAYS else 0})")
+    p.add_argument("--out", default=None,
+                   help="출력 루트 디렉터리 (기본: count_FSM/fsm2_output)")
     return p.parse_args()
 
 
@@ -93,7 +95,7 @@ def _numstr(v):
     return str(int(f)) if f.is_integer() else str(f)
 
 
-FSM_OUTPUT_DIR = _THIS_DIR / "fsm_output"
+FSM_OUTPUT_DIR = _THIS_DIR / "fsm2_output"
 FSM_OUTPUT_DIR.mkdir(exist_ok=True)
 
 TAG = "quiet7_mad"   # 출력 파일명 태그
@@ -210,7 +212,7 @@ def main():
     peak_fl  = args.peak
     quiet_d  = args.quiet_days if args.quiet_days > 0 else None
     runtag   = build_runtag(TAG, window, k, onset_fl, peak_fl)
-    out_dir  = FSM_OUTPUT_DIR / runtag
+    out_dir  = (Path(args.out) if args.out else FSM_OUTPUT_DIR) / runtag
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"[fsm:{TAG}] params: window={window}d k={k} onset={onset_fl} "

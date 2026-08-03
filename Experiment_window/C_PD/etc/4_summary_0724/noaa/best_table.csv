@@ -1,0 +1,8 @@
+detector,catalog,baseline,win,k_or_mult,h,onset,maglat_bins,channel,POD,FAR,event_FAR,n_events_total,n_events_tp,n_events_fa,TP,FP,FN,precision,recall,f1,n_det,n_hit,n_fa,n_fa_saa,fa_maglat_median,fa_maglat_p10,fa_maglat_p90,tp_maglat_median,fa_bmag_median,detected,youden,criterion,score,n_channels_in_group,rank_of_best,n_excluded_far_nan,n_excluded_low_nhit,n_excluded_low_recall,n_excluded_high_ndet
+gk2a,noaa,blc1_fixed,,,,1.0,,PD1B-OU,0.676,0.097,0.115,25,22,3,23,3,11,0.885,0.676,0.767,31,23,3,,,,,,,True,0.5790000000000001,min_far,0.097,12,1,0,108,108,0
+gk2a,noaa,blc1_lowe,1.0,1.25,,1.0,,PD1B-OU,0.676,0.065,0.08,24,22,2,23,2,11,0.92,0.676,0.78,31,23,2,,,,,,,True,0.611,min_far,0.065,33,1,0,0,216,907
+gk2a,noaa,quietoff,1.0,20.0,,0.7,,PD1B-OU,0.676,0.03,0.042,23,22,1,23,1,11,0.958,0.676,0.793,33,23,1,,,,,,,True,0.646,min_far,0.03,42,1,0,1896,4424,3007
+metop03,noaa,blc1_lowe,1.0,1.25,,0.3,,pro_tel0_p5,0.714,0.253,0.25,38,28,10,30,10,12,0.75,0.714,0.732,83,30,21,2.0,-34.6,-67.0,47.4,-29.85,38807.3,True,0.46099999999999997,min_far,0.253,5,1,0,168,639,0
+metop03,noaa,quietoff,1.0,15.0,,0.1,,omni_p6,0.524,0.075,0.083,23,21,2,22,2,20,0.917,0.524,0.667,67,22,5,2.0,21.1,-41.8,30.86,20.4,36021.1,True,0.449,min_far,0.075,17,1,24,756,3028,1607
+noaa19,noaa,blc1_lowe,1.0,1.25,,0.1,,pro_tel90_p5,0.5,0.338,0.364,32,20,12,21,12,21,0.636,0.5,0.56,71,21,24,4.0,-3.45,-71.55,51.33,21.1,36133.0,True,0.16199999999999998,min_far,0.338,4,1,0,168,708,0
+noaa19,noaa,quietoff,1.0,3.0,,1.0,,omni_p7,0.571,0.239,0.385,37,22,15,24,15,18,0.615,0.571,0.593,113,24,27,7.0,-51.2,-72.06,39.68,-4.5,31736.6,True,0.33199999999999996,min_far,0.239,14,1,54,750,3195,1564
