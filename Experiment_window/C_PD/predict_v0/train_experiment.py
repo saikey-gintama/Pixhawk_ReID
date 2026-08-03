@@ -29,22 +29,40 @@ CLI 인자로 노출하는 오케스트레이션만 새로 짠다.
       window) 텐서를 만듦 -- tcn.py의 TCNClassifier.forward가 2D/3D 입력 모두 받도록
       이미 일반화돼 있어 추가 변경 없이 그대로 동작.)
 
+forecast (--forecast-min, 기본 0=nowcast): 이진(--binary)이 가장 잘 되므로(nowcast
+macro-F1 0.85) 이걸 미래로 밀어 "지금 quiet여도 Δt분 뒤 event가 시작되는가"를 미리
+예측할 수 있는지 본다. 시각 t의 입력(z_lag..)으로 t+Δt 시점의 라벨을 예측 -- 라벨만
+시프트하고 입력 윈도우·모델·episode 분할·GroupKFold는 전부 그대로(스펙 그대로).
+구현: windows['label']을 t 시점 값 대신 timeseries_*.parquet에서 조회한 t+Δt 시점
+값으로 치환(apply_forecast_shift). t+Δt가 timeseries 인덱스에 없는 행(각 episode
+크롭의 맨 끝 Δt 구간, 또는 우연히 실데이터 공백과 겹치는 경우 전부 포함)은 그
+윈도우째로 제외 -- reindex가 없는 시각에 자동으로 NaN을 주므로 그 자체가 배제
+조건이 된다. Δt는 15분 격자이므로 15의 배수만 허용. 3클래스 forecast도 기술적으로
+되지만(라벨 시프트가 클래스 수와 무관) 이번 목적은 이진.
+
 출력 (predict_v0/runs/<exp-name>/, 기존 실험 폴더 보호를 위해 이미 있으면 --force
 없이는 중단 -- 4_summarize.py의 --force 관례와 동일):
   learning_curves.png, confusion_matrix.png, events/event{id}_*.png(최대 100장),
   metrics.csv(fold별+mean/std, 클래스별 P/R/F1 + macro-F1 + best/stopped epoch),
   run_config.json(실행 인자 전부 -- 재현용)
+  exp-name 자동생성 시 forecast-min>0이면 "_fc{Δt}" 접미사가 붙어 nowcast 결과와
+  안 겹침(예: omni_p6_binary_fc15).
 
 사용:
   # 실험1: 단일채널 3클래스
   python train_experiment.py --channels omni_p6 --epochs 100 --patience 15
-  # 실험2: 단일채널 이진
+  # 실험2: 단일채널 이진 (nowcast, Δt=0 기준선)
   python train_experiment.py --channels omni_p6 --binary --epochs 100 --patience 15
   # 실험3: 다채널 3클래스 (먼저 다채널 데이터셋 생성 필요)
   python 2_build_dataset.py --channels omni_p6,omni_p7,pro_tel0_p5
   python train_experiment.py --channels omni_p6,omni_p7,pro_tel0_p5 --epochs 100 --patience 15
+  # 이진 forecast Δt 스윕 (15/30/60분)
+  python train_experiment.py --channels omni_p6 --binary --forecast-min 15 --epochs 100 --patience 15
+  python train_experiment.py --channels omni_p6 --binary --forecast-min 30 --epochs 100 --patience 15
+  python train_experiment.py --channels omni_p6 --binary --forecast-min 60 --epochs 100 --patience 15
   # 스모크 테스트(긴 학습 없이 파이프라인만 확인)
   python train_experiment.py --channels omni_p6 --epochs 2 --folds 1 --exp-name smoke1 --force
+  python train_experiment.py --channels omni_p6 --binary --forecast-min 15 --epochs 2 --folds 1 --exp-name smoke_fc15 --force
 """
 from __future__ import annotations
 import argparse
@@ -97,6 +115,37 @@ def build_X(windows: pd.DataFrame, channels: list[str], window: int) -> np.ndarr
     return np.stack(arrs, axis=1)                                 # (n, n_channels, window)
 
 
+def apply_forecast_shift(windows: pd.DataFrame, ts: pd.DataFrame, forecast_min: int) -> pd.DataFrame:
+    """windows['label']을 t(window_end_time) 시점 값 대신 t+forecast_min 시점 값으로
+    치환(nowcast -> forecast). event_id/episode_id/ambiguous_peak(그룹핑·진단용)는
+    건드리지 않고 t 기준 그대로 유지 -- GroupKFold 분할은 입력 시각의 이벤트 소속을
+    그대로 쓴다. t+Δt가 timeseries에 없는 행(각 episode 크롭 맨 끝 Δt 구간, 또는
+    실데이터 공백과 겹치는 경우)은 reindex가 NaN을 주므로 그 자체로 걸러져 윈도우째
+    제외된다. forecast_min<=0이면 그대로(nowcast, 무변경) 반환."""
+    if forecast_min <= 0:
+        return windows
+    if forecast_min % 15 != 0:
+        raise SystemExit(f"[train_experiment] --forecast-min은 15의 배수여야 합니다(15분 격자): {forecast_min}")
+
+    future_time = windows["window_end_time"] + pd.Timedelta(minutes=forecast_min)
+    future_label = ts["label"].reindex(future_time).values
+    now_label = windows["label"].values
+    keep = ~pd.isna(future_label)
+
+    n_before = len(windows)
+    out = windows.loc[keep].reset_index(drop=True).copy()
+    out["label"] = future_label[keep].astype(np.int64)
+    print(f"[train_experiment] forecast +{forecast_min}min 라벨 시프트: {n_before}개 -> {len(out)}개 "
+          f"윈도우(미래 라벨 없음 {n_before - len(out)}개 제외)")
+
+    sample_idx = np.where(keep)[0][:3]
+    for i in sample_idx:
+        t = windows["window_end_time"].iloc[i]
+        print(f"    검증 예시: t={t}  now_label={int(now_label[i])}(t 시점)  ->  "
+              f"forecast_label={int(future_label[i])}(t+{forecast_min}min={t + pd.Timedelta(minutes=forecast_min)} 시점)")
+    return out
+
+
 def build_y(windows: pd.DataFrame, binary: bool):
     y = windows["label"].values.astype(np.int64)
     if binary:
@@ -145,6 +194,9 @@ def main():
                          "(2_build_dataset.py --channels로 미리 생성 필요)")
     ap.add_argument("--binary", action="store_true",
                     help="quiet=0, event(rising+decreasing)=1로 라벨 병합(데이터셋 재생성 없음)")
+    ap.add_argument("--forecast-min", type=int, default=0,
+                    help="0=nowcast(기본). >0이면 라벨을 t+Δt분 시점 값으로 시프트해 forecast "
+                         "학습(15의 배수만 허용, --binary와 함께 쓰는 걸 기본 상정)")
     ap.add_argument("--epochs", type=int, default=100)
     ap.add_argument("--patience", type=int, default=15,
                     help="val macro-F1 개선 없이 버티는 epoch 수(조기종료 기준). 0 이하면 비활성화")
@@ -164,7 +216,8 @@ def main():
     channels = [c.strip() for c in args.channels.split(",") if c.strip()]
     patience = args.patience if args.patience and args.patience > 0 else None
 
-    exp_name = args.exp_name or ("_".join(channels) + ("_binary" if args.binary else "_3class"))
+    fc_suffix = f"_fc{args.forecast_min}" if args.forecast_min > 0 else ""
+    exp_name = args.exp_name or ("_".join(channels) + ("_binary" if args.binary else "_3class") + fc_suffix)
     out_dir = Path(args.out_dir) if args.out_dir else HERE / "runs" / exp_name
     if out_dir.exists() and not args.force:
         raise SystemExit(f"[train_experiment] {out_dir} 이미 존재합니다 -- 다른 --exp-name을 쓰거나 "
@@ -172,7 +225,14 @@ def main():
     events_dir = out_dir / "events"
     events_dir.mkdir(parents=True, exist_ok=True)
 
+    # 이벤트 오버레이 상단 z-score와 forecast 라벨 시프트 둘 다 라벨 앵커(첫) 채널의
+    # timeseries가 필요해서 여기서 한 번만 로드해 재사용.
+    primary = channels[0]
+    ts = pd.read_parquet(HERE / "dataset_v0" / f"timeseries_{args.detector}_{primary}.parquet")
+    ts = ts.set_index("time")
+
     windows = load_windows(args.detector, channels)
+    windows = apply_forecast_shift(windows, ts, args.forecast_min)
     window = infer_window(windows, channels)
     X = build_X(windows, channels, window)
     y, label_names = build_y(windows, args.binary)
@@ -181,8 +241,9 @@ def main():
     label_transform = (lambda arr: (arr > 0).astype(int)) if args.binary else None
 
     print(f"[train_experiment] exp={exp_name}  channels={channels}  binary={args.binary}  "
-          f"n_classes={n_classes}  windows={len(windows)}  window_len={window}  "
-          f"X.shape={X.shape}  folds={args.folds}  epochs={args.epochs}  patience={patience}")
+          f"forecast_min={args.forecast_min}  n_classes={n_classes}  windows={len(windows)}  "
+          f"window_len={window}  X.shape={X.shape}  folds={args.folds}  epochs={args.epochs}  "
+          f"patience={patience}")
 
     oof_proba, fold_histories, fold_of_episode = diag.run_oof(
         windows, X, y, n_splits=args.folds, n_classes=n_classes,
@@ -209,10 +270,8 @@ def main():
         json.dumps(run_config, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"[train_experiment] 저장 -> {out_dir / 'run_config.json'}")
 
-    # 이벤트 오버레이: 상단 z-score는 항상 라벨 앵커(첫) 채널의 timeseries 재사용
-    primary = channels[0]
-    ts = pd.read_parquet(HERE / "dataset_v0" / f"timeseries_{args.detector}_{primary}.parquet")
-    ts = ts.set_index("time")
+    # 이벤트 오버레이: 상단 z-score+라벨 음영은 forecast 여부와 무관하게 항상 실제
+    # 물리 상태(nowcast, t 시점) 기준 -- ts는 위에서 이미 로드해 둔 것 그대로 재사용.
     events = pd.read_csv(HERE / "quality_check" / "events_reconciled.csv",
                         parse_dates=["onset_time", "peak_time", "end_time"])
     episode_of_event = windows[windows["event_id"] >= 0].groupby("event_id")["episode_id"].first().to_dict()
