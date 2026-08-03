@@ -1,11 +1,11 @@
 """
-train_v0.py
+3_train.py
 ============
 예측 모델 v0 -- Step 1: "raw z-score만으로 포락선(rising/decreasing)이 학습되는가"를
 GroupKFold 중 fold 하나로 먼저 확인한다(5-fold 전체/시간홀드아웃/진단그림은 이 스크립트를
 통과 판정한 뒤의 Step 2/3 -- 이번 실행 범위 아님).
 
-split의 group은 build_dataset_v0.py가 만든 episode_id를 쓴다(event_id가 아님) --
+split의 group은 2_build_dataset.py가 만든 episode_id를 쓴다(event_id가 아님) --
 quiet 윈도우는 event_id=-1 하나로 뭉쳐 있어 그걸 그대로 GroupKFold group으로 쓰면
 quiet 전부가 항상 통째로 같은 fold에만 들어가 버린다(스플릿이 사실상 망가짐).
 episode_id는 이벤트+앞뒤 pad 구간을 하나로 묶은 그룹이라 quiet도 가까운 이벤트에
@@ -17,7 +17,7 @@ episode_id는 이벤트+앞뒤 pad 구간을 하나로 묶은 그룹이라 quiet
 전에).
 
 사용:
-  python train_v0.py --detector metop03 --channel omni_p6
+  python 3_train.py --detector metop03 --channel omni_p6
 """
 from __future__ import annotations
 import argparse
@@ -51,7 +51,7 @@ np.random.seed(SEED)
 
 
 def load_dataset(detector: str, channel: str) -> pd.DataFrame:
-    path = HERE.parent / "manual_labels" / "dataset_v0" / f"windows_{detector}_{channel}.parquet"
+    path = HERE / "dataset_v0" / f"windows_{detector}_{channel}.parquet"
     return pd.read_parquet(path)
 
 

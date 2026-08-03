@@ -1,5 +1,5 @@
 """
-label_events_gui.py
+0_label_events_gui.py
 ====================
 수동 이벤트 라벨링 GUI -- FSM/카탈로그가 놓친 실제 이벤트에 onset/peak/end를
 사람이 직접 표시해 예측 모델용 ground-truth를 만든다. 채널 1개씩 개별 라벨링
@@ -39,10 +39,10 @@ GK2A는 이 코드베이스 어디에도 geo/IGRF 모듈이 없음(정지궤도�
   기존 파일 있으면 시작 시 로드(이어작업). event_id 당 o/p/e 미완성이면 제목에
   incomplete 카운트로 경고 표시(막지는 않음).
 
-사용:
-  python label_events_gui.py --detector metop03 --channel omni_p6
-  python label_events_gui.py --detector gk2a --channel PD1B-OU --show-fsm w7k7
-  python label_events_gui.py --detector metop03 --channel omni_p6 --window-days 4 --out-dir C_PD/manual_labels
+사용 (predict_v0/ 안에서 실행):
+  python 0_label_events_gui.py --detector metop03 --channel omni_p6
+  python 0_label_events_gui.py --detector gk2a --channel PD1B-OU --show-fsm w7k7
+  python 0_label_events_gui.py --detector metop03 --channel omni_p6 --window-days 4 --out-dir predict_v0/manual_labels
 """
 from __future__ import annotations
 import argparse
@@ -53,12 +53,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-HERE = Path(__file__).resolve().parent  # C_PD/
+HERE = Path(__file__).resolve().parent   # C_PD/predict_v0/
+C_PD = HERE.parent                        # C_PD/ -- POES/GK2A 등 공용 모듈 위치
 
-sys.path.insert(0, str(HERE / "POES"))
-sys.path.insert(0, str(HERE / "POES" / "event_MATCHER"))
-sys.path.insert(0, str(HERE / "POES" / "count_FSM"))
-sys.path.insert(0, str(HERE / "GK2A" / "KSEM_count"))
+sys.path.insert(0, str(C_PD / "POES"))
+sys.path.insert(0, str(C_PD / "POES" / "event_MATCHER"))
+sys.path.insert(0, str(C_PD / "POES" / "count_FSM"))
+sys.path.insert(0, str(C_PD / "GK2A" / "KSEM_count"))
 import _match_core_poes as core                      # _import_event_io, _load_count_channel
 import fsm_count_spe_quietoff_mad_poes as fsm_engine  # load_geo/tag_onset_geo + 롤링배경 엔진(--show-fsm)
 import ksem_io                                        # GK2A count 로드
@@ -70,12 +71,12 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
 _POES_IO = {
-    "metop03": ("poes_metop03_io", HERE / "POES" / "MetOp03_count" / "poes_metop03_cache_parquet"),
-    "noaa19":  ("poes_noaa19_io",  HERE / "POES" / "NOAA19_count"  / "poes_noaa19_cache_parquet"),
+    "metop03": ("poes_metop03_io", C_PD / "POES" / "MetOp03_count" / "poes_metop03_cache_parquet"),
+    "noaa19":  ("poes_noaa19_io",  C_PD / "POES" / "NOAA19_count"  / "poes_noaa19_cache_parquet"),
 }
-_GK2A_CACHE = HERE / "GK2A" / "KSEM_count" / "ksem_cache_parquet"
+_GK2A_CACHE = C_PD / "GK2A" / "KSEM_count" / "ksem_cache_parquet"
 
-_DEFAULT_OUT_DIR = HERE / "manual_labels"
+_DEFAULT_OUT_DIR = HERE / "manual_labels"  # predict_v0/manual_labels/
 _CSV_COLS = ["event_id", "label_type", "time", "count", "maglat", "Bmag", "in_saa",
             "detector", "channel", "note"]
 _LABEL_COLORS = {"o": "green", "p": "red", "e": "blue"}

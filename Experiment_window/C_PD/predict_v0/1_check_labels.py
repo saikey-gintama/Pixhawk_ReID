@@ -1,54 +1,63 @@
 """
-check_manual_labels.py
+1_check_labels.py
 =======================
 manual_labels_{detector}_{channel}.csv 품질 점검 + FSM/카탈로그 대비 리포트.
-label_events_gui.py 로 만든 손라벨을 모델 착수 전에 검증하는 1회성 분석 스크립트
+0_label_events_gui.py 로 만든 손라벨을 모델 착수 전에 검증하는 1회성 분석 스크립트
 (라벨이 늘어날 때마다 재실행 가능하도록 스크립트로 남김).
 
 재사용 (재구현 없음 -- import만):
-  label_events_gui.py                 : load_channel_series (count 로드, --show-fsm과 동일 경로)
+  0_label_events_gui.py               : load_channel_series (count 로드, --show-fsm과 동일 경로)
   fsm_count_spe_quietoff_mad_poes.py  : compute_rolling_bg (bg_median/std -- diag의 --zscore와
-      동일 공식으로 peak/bg 비율 계산에 재사용)
+      동일 공식으로 peak/bg 비율 계산에 재사용), build_runtag/_numstr(FSM 산출물 폴더명 조립 --
+      --fsm-w/--fsm-k 값으로 실제 러너와 동일한 runtag 문자열을 만들어 그 결과 CSV를 찾는다)
   _match_core_poes.py                 : _cluster_indices(24h 시퀀셜 클러스터링 -- FSM 재검출
       묶음에 재사용, event_far_reeval 결론과 동일 방식), det_matched_mask(tol_h=24 매칭)
   noaa_goes_spe_io                    : load (NOAA SPE 카탈로그 로드)
 
-수동 라벨 45개→57개(2026-07-27 기준)로 늘어난 상태 -- 정확한 개수는 이 스크립트가
-직접 세어 보고(사용자가 구두로 말한 45/42는 검증 대상이지 전제가 아님).
-
 사용:
-  python check_manual_labels.py --detector metop03 --channel omni_p6 --fsm-w 7 --fsm-k 7
+  python 1_check_labels.py --detector metop03 --channel omni_p6 --fsm-w 7 --fsm-k 7
 """
 from __future__ import annotations
 import argparse
+import importlib
 import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parent   # C_PD/predict_v0/
+C_PD = HERE.parent                        # C_PD/ -- POES/NOAA_GOES 등 공용 모듈 위치
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(HERE / "POES"))
-sys.path.insert(0, str(HERE / "POES" / "event_MATCHER"))
-sys.path.insert(0, str(HERE / "POES" / "count_FSM"))
+sys.path.insert(0, str(C_PD / "POES"))
+sys.path.insert(0, str(C_PD / "POES" / "event_MATCHER"))
+sys.path.insert(0, str(C_PD / "POES" / "count_FSM"))
 
-from label_events_gui import load_channel_series, _POES_IO  # noqa: E402
+# "0_label_events_gui"는 숫자로 시작해 `import` 문으로 직접 못 씀(파이썬 식별자 규칙) --
+# importlib.import_module은 파일명 그대로 받아 동작(파서를 거치지 않음).
+_label_gui = importlib.import_module("0_label_events_gui")
+load_channel_series = _label_gui.load_channel_series
+_POES_IO = _label_gui._POES_IO
 import _match_core_poes as core                              # noqa: E402
 import fsm_count_spe_quietoff_mad_poes as fsm_engine          # noqa: E402
 
 MATCH_TOL_H = core.MATCH_TOL_H  # 24.0, 프로젝트 전역 관례
 _TYPE_ORDER = {"o": 0, "p": 1, "e": 2}
 
-_CATALOG_DIR = HERE / "NOAA_GOES" / "noaa_goes_spe_cache_parquet"
+_CATALOG_DIR = C_PD / "NOAA_GOES" / "noaa_goes_spe_cache_parquet"
 _CATALOG_IO = "noaa_goes_spe_io"
 
-# 이미 디스크에 존재하는 사전 계산 FSM onset 산출물(quietoff_mad, w7k7) --
-# 이 세션의 diag_rolling_threshold_poes.py 사용 예시들이 반복적으로 쓴
-# onset_floor=0.1, peak_floor=0(피크 필터 없음 -- FSM recall을 낮게 왜곡하지 않도록)
-# 조합을 그대로 채택. 새로 재계산하지 않고 기존 산출 CSV를 그대로 읽는다.
-_FSM_ONSET_CSV = (HERE / "POES" / "MetOp03_count" / "metop03_output" / "2_fsm" /
-                  "quietoff_mad_w7_k7_on0.1_pk0" / "fsm_onset_quietoff_mad_w7_k7_on0.1_pk0.csv")
+# onset_floor=0.1, peak_floor=0(피크 필터 없음 -- FSM recall을 낮게 왜곡하지 않도록)은
+# 이 세션의 diag_rolling_threshold_poes.py 사용 예시들이 반복적으로 쓴 고정값으로 유지.
+# w/k는 --fsm-w/--fsm-k로 받아 fsm_engine.build_runtag로 실제 러너와 동일한 runtag를
+# 조립한다(하드코딩 문자열 대신 -- 재구현 없이 기존 산출 CSV를 그대로 찾아 읽는다).
+_FSM_ONSET_FLOOR, _FSM_PEAK_FLOOR = 0.1, 0
+
+
+def _fsm_onset_csv_path(fsm_w: int, fsm_k: float) -> Path:
+    runtag = fsm_engine.build_runtag(fsm_engine.TAG, fsm_w, fsm_k, _FSM_ONSET_FLOOR, _FSM_PEAK_FLOOR)
+    return (C_PD / "POES" / "MetOp03_count" / "metop03_output" / "2_fsm" /
+            runtag / f"fsm_onset_{runtag}.csv")
 
 
 def load_manual_labels(path: Path) -> pd.DataFrame:
@@ -184,12 +193,14 @@ def report_overlaps(events: pd.DataFrame) -> pd.DataFrame:
     return ov
 
 
-def report_fsm_comparison(events: pd.DataFrame, tol_h: float = MATCH_TOL_H) -> dict:
+def report_fsm_comparison(events: pd.DataFrame, fsm_onset_csv: Path, fsm_w: int, fsm_k: float,
+                          tol_h: float = MATCH_TOL_H) -> dict:
     print("\n" + "=" * 70)
-    print(f"[2-a] FSM(omni_p6, quietoff_mad w7k7 on0.1_pk0) 대비 (tol={tol_h}h)")
+    print(f"[2-a] FSM(omni_p6, quietoff_mad w{fsm_w}k{fsm_k} on{_FSM_ONSET_FLOOR}_pk{_FSM_PEAK_FLOOR}) "
+          f"대비 (tol={tol_h}h)")
     print("=" * 70)
     manual = events.dropna(subset=["onset_time"]).copy()
-    fsm_raw = pd.read_csv(_FSM_ONSET_CSV, parse_dates=["onset_time", "peak_time", "end_time"])
+    fsm_raw = pd.read_csv(fsm_onset_csv, parse_dates=["onset_time", "peak_time", "end_time"])
     fsm_raw = fsm_raw[fsm_raw["channel"] == "omni_p6"].reset_index(drop=True)
     if fsm_raw["onset_time"].dt.tz is None:
         fsm_raw["onset_time"] = fsm_raw["onset_time"].dt.tz_localize("UTC")
@@ -246,7 +257,8 @@ def main():
     ap.add_argument("--detector", default="metop03")
     ap.add_argument("--channel", default="omni_p6")
     ap.add_argument("--fsm-w", type=int, default=7, help="peak/bg_median 계산용 rolling bg 창(일)")
-    ap.add_argument("--out-dir", default=str(HERE / "manual_labels" / "quality_check"))
+    ap.add_argument("--fsm-k", type=float, default=7, help="FSM 산출물 runtag의 k(threshold 배수)")
+    ap.add_argument("--out-dir", default=str(HERE / "quality_check"))
     args = ap.parse_args()
 
     labels_path = HERE / "manual_labels" / f"manual_labels_{args.detector}_{args.channel}.csv"
@@ -261,7 +273,8 @@ def main():
     cnt, _ = load_channel_series(args.detector, args.channel)
     low = report_peak_distribution(events, cnt, args.fsm_w)
     overlaps = report_overlaps(events)
-    fsm_res = report_fsm_comparison(events)
+    fsm_csv = _fsm_onset_csv_path(args.fsm_w, args.fsm_k)
+    fsm_res = report_fsm_comparison(events, fsm_csv, args.fsm_w, args.fsm_k)
     cat_res = report_catalog_comparison(events)
 
     out_dir = Path(args.out_dir)

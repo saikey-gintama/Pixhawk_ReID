@@ -1,13 +1,13 @@
 """
-build_dataset_v0.py
+2_build_dataset.py
 ====================
-manual_labels_{detector}_{channel}.csv (check_manual_labels.py로 검증된 손라벨)로부터
+manual_labels_{detector}_{channel}.csv (1_check_labels.py로 검증된 손라벨)로부터
 예측 모델 v0(TCN 3클래스: quiet/rising/decreasing) 착수용 데이터셋을 만든다.
 
 재사용 (재구현 없음 -- import만):
-  check_manual_labels.py              : load_manual_labels, build_reconciled_events,
+  1_check_labels.py                    : load_manual_labels, build_reconciled_events,
       report_completeness(의 split_pairs 병합 로직) -- event 구간 재구성에 그대로 재사용
-  label_events_gui.py                  : load_channel_series (count 로드)
+  0_label_events_gui.py                : load_channel_series (count 로드)
   fsm_count_spe_quietoff_mad_poes.py   : compute_rolling_bg (bg_median/std)
   diag_rolling_threshold_poes.py의 _draw_zscore_panel과 동일 공식: z=(count-bg_median)/bg_std
       (그 함수 자체는 plotting 전용이라 import 대신 동일 공식만 재사용 -- 계산 로직은
@@ -39,7 +39,7 @@ CUSUM 실험 때 겪은 것과 같은 계열):
   event_id(이벤트 구간 소유권, quiet=-1)와 별개로 windows.parquet에만 존재하며
   GroupKFold의 group 컬럼으로 쓴다(크롭 필터를 거친 모든 윈도우는 episode_id>=0).
 
-출력 2종 (--out-dir, 기본 manual_labels/dataset_v0/):
+출력 2종 (--out-dir, 기본 predict_v0/dataset_v0/):
   timeseries.parquet : 15분 격자 전체(라벨 있는 채널 count 시계열 전 구간, 크롭 없음) --
       time, count, zscore, label(0/1/2), event_id(-1=quiet), ambiguous_peak
   windows.parquet     : 위 timeseries에서 이벤트 중심 크롭 구간만, 2궤도(기본 14샘플)
@@ -47,23 +47,30 @@ CUSUM 실험 때 겪은 것과 같은 계열):
       label, event_id, episode_id, ambiguous_peak
 
 사용:
-  python build_dataset_v0.py --detector metop03 --channel omni_p6 --window 14 --bg-window-days 7
+  python 2_build_dataset.py --detector metop03 --channel omni_p6 --window 14 --bg-window-days 7
 """
 from __future__ import annotations
 import argparse
+import importlib
 import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parent   # C_PD/predict_v0/
+C_PD = HERE.parent                        # C_PD/ -- POES 등 공용 모듈 위치
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(HERE / "POES"))
-sys.path.insert(0, str(HERE / "POES" / "count_FSM"))
+sys.path.insert(0, str(C_PD / "POES"))
+sys.path.insert(0, str(C_PD / "POES" / "count_FSM"))
 
-from label_events_gui import load_channel_series           # noqa: E402
-from check_manual_labels import load_manual_labels, report_completeness, build_reconciled_events  # noqa: E402
+# 숫자로 시작하는 모듈명은 `import` 문으로 직접 못 써서 importlib로 로드
+# (0_label_events_gui.py / 1_check_labels.py 참고).
+load_channel_series = importlib.import_module("0_label_events_gui").load_channel_series
+_check = importlib.import_module("1_check_labels")
+load_manual_labels = _check.load_manual_labels
+report_completeness = _check.report_completeness
+build_reconciled_events = _check.build_reconciled_events
 import fsm_count_spe_quietoff_mad_poes as fsm_engine        # noqa: E402
 
 # ── z-score 발산 가드 (진단 그림 보고 조정 가능하게 상수로 노출) ──────────────
@@ -188,7 +195,7 @@ def main():
     ap.add_argument("--detector", default="metop03")
     ap.add_argument("--channel", default="omni_p6")
     ap.add_argument("--window", type=int, default=WINDOW, help="2궤도 ~= 206분 / 15분 샘플 ~= 14")
-    ap.add_argument("--bg-window-days", type=int, default=7, help="rolling bg 창(일) -- check_manual_labels와 동일 w 권장")
+    ap.add_argument("--bg-window-days", type=int, default=7, help="rolling bg 창(일) -- 1_check_labels와 동일 w 권장")
     ap.add_argument("--pad-before-days", type=int, default=PAD_BEFORE_DAYS)
     ap.add_argument("--pad-after-days", type=int, default=PAD_AFTER_DAYS)
     ap.add_argument("--z-eps", type=float, default=Z_EPS)
@@ -226,7 +233,7 @@ def main():
     print(f"[dataset_v0] windows 고유 event_id(라벨 소유) {windows.loc[windows['event_id']>=0,'event_id'].nunique()}개, "
           f"고유 episode_id(그룹) {windows['episode_id'].nunique()}개")
 
-    out_dir = Path(args.out_dir) if args.out_dir else HERE / "manual_labels" / "dataset_v0"
+    out_dir = Path(args.out_dir) if args.out_dir else HERE / "dataset_v0"
     out_dir.mkdir(parents=True, exist_ok=True)
     ts.reset_index().to_parquet(out_dir / f"timeseries_{args.detector}_{args.channel}.parquet", index=False)
     windows.to_parquet(out_dir / f"windows_{args.detector}_{args.channel}.parquet", index=False)

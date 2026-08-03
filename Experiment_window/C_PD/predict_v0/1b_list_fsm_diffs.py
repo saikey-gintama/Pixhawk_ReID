@@ -1,42 +1,49 @@
 """
-list_fsm_diffs.py
+1b_list_fsm_diffs.py
 ==================
-check_manual_labels.py 산출물(fsm_only_no_manual.csv/fsm_missed_manual.csv)을 사람이
+1_check_labels.py 산출물(fsm_only_no_manual.csv/fsm_missed_manual.csv)을 사람이
 직접 열어보고 GUI로 재검토하기 쉽게 날짜/보조정보를 채워 재저장 + FSM이 강한
 이벤트를 놓친 이유 예비 진단(배경창 부풀림 가설 확인).
 
 재사용 (재구현 없음 -- import만):
-  check_manual_labels.py : load_manual_labels, build_reconciled_events,
-      report_completeness(split_pairs), _FSM_ONSET_CSV, MATCH_TOL_H
-  label_events_gui.py    : load_channel_series
+  1_check_labels.py : load_manual_labels, build_reconciled_events,
+      report_completeness(split_pairs), _fsm_onset_csv_path, MATCH_TOL_H
+  0_label_events_gui.py    : load_channel_series
   fsm_count_spe_quietoff_mad_poes.py : compute_rolling_bg/build_threshold/detect_segments
       (예비 진단에서 threshold vs count 재현 -- 새 계산식 아님, 기존 엔진 그대로)
 
-출력 (manual_labels/quality_check/):
+출력 (predict_v0/quality_check/):
   A_fsm_only_no_manual.csv   : FSM만 잡음(7개) -- onset/peak 시각, peak_count, maglat,
       in_saa, 가장 가까운 손라벨까지 시간차(부호: +=손라벨이 나중, -=손라벨이 먼저)
   B_fsm_missed_manual.csv    : 손라벨만 잡음(32개, FSM 놓침) -- peak_count 내림차순
 
 사용:
-  python list_fsm_diffs.py --detector metop03 --channel omni_p6
+  python 1b_list_fsm_diffs.py --detector metop03 --channel omni_p6
 """
 from __future__ import annotations
 import argparse
+import importlib
 import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parent   # C_PD/predict_v0/
+C_PD = HERE.parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(HERE / "POES"))
-sys.path.insert(0, str(HERE / "POES" / "count_FSM"))
+sys.path.insert(0, str(C_PD / "POES"))
+sys.path.insert(0, str(C_PD / "POES" / "count_FSM"))
 
-from check_manual_labels import (  # noqa: E402
-    load_manual_labels, report_completeness, build_reconciled_events, MATCH_TOL_H, _FSM_ONSET_CSV,
-)
-from label_events_gui import load_channel_series  # noqa: E402
+# "0_label_events_gui"/"1_check_labels"는 숫자로 시작해 `import` 문으로 직접 못 씀 --
+# importlib.import_module로 파일명 그대로 로드(1_check_labels.py 참고).
+_check = importlib.import_module("1_check_labels")
+load_manual_labels = _check.load_manual_labels
+report_completeness = _check.report_completeness
+build_reconciled_events = _check.build_reconciled_events
+MATCH_TOL_H = _check.MATCH_TOL_H
+_FSM_ONSET_CSV = _check._fsm_onset_csv_path(7, 7)  # 기존 하드코딩 w7k7과 동일 기본값 유지
+load_channel_series = importlib.import_module("0_label_events_gui").load_channel_series
 import fsm_count_spe_quietoff_mad_poes as fsm_engine  # noqa: E402
 
 
@@ -148,7 +155,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--detector", default="metop03")
     ap.add_argument("--channel", default="omni_p6")
-    ap.add_argument("--out-dir", default=str(HERE / "manual_labels" / "quality_check"))
+    ap.add_argument("--out-dir", default=str(HERE / "quality_check"))
     args = ap.parse_args()
 
     labels_path = HERE / "manual_labels" / f"manual_labels_{args.detector}_{args.channel}.csv"
