@@ -33,7 +33,9 @@ def load_run(run_dir: Path) -> dict:
     config = json.loads(config_path.read_text(encoding="utf-8"))
     metrics = pd.read_csv(metrics_path)
     mean_row = metrics.loc[metrics["fold"] == "mean"].iloc[0].to_dict()
-    return {"exp_name": run_dir.name, "forecast_min": config["forecast_min"],
+    # forecast_min은 --forecast-min 인자 도입(이진 forecast 기능) 이전에 돌린 run에는
+    # run_config.json에 키 자체가 없다 -- 그 시절 실험은 전부 nowcast였으므로 0으로 간주.
+    return {"exp_name": run_dir.name, "forecast_min": config.get("forecast_min", 0),
             "label_names": config["label_names"], "n_windows": config["n_windows"],
             **mean_row}
 
