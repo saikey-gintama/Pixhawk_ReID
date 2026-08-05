@@ -45,6 +45,11 @@ macro-F1 0.85) 이걸 미래로 밀어 "지금 quiet여도 Δt분 뒤 event가 �
   learning_curves.png, confusion_matrix.png, events/event{id}_*.png(최대 100장),
   metrics.csv(fold별+mean/std, 클래스별 P/R/F1 + macro-F1 + best/stopped epoch),
   run_config.json(실행 인자 전부 -- 재현용)
+  oof_predictions.parquet(window_end_time, episode_id, fold, now_label, forecast_label
+      (=학습 타깃), y_pred, proba_<클래스명>...) -- 재학습 없이 부분집합 분석(예:
+      6_forecast_summary.py의 전환 구간 지표)을 하기 위한 원자료. now_label !=
+      forecast_label 부분집합이 "전환 구간"(forecast_min=0 nowcast는 정의상 이 부분
+      집합이 항상 비어 있음 -- now_label과 forecast_label이 같은 라벨이라서).
   exp-name 자동생성 시 forecast-min>0이면 "_fc{Δt}" 접미사가 붙어 nowcast 결과와
   안 겹침(예: omni_p6_binary_fc15).
 
@@ -153,6 +158,36 @@ def build_y(windows: pd.DataFrame, binary: bool):
     return y, diag.LABEL_NAMES
 
 
+def save_oof_predictions(windows: pd.DataFrame, ts: pd.DataFrame, y: np.ndarray,
+                         oof_proba: np.ndarray, oof_pred: np.ndarray, covered: np.ndarray,
+                         fold_of_episode: dict, label_names: list[str], binary: bool,
+                         out_path: Path) -> pd.DataFrame:
+    """window별 OOF 예측(확률+argmax)을 디스크에 남겨서, 나중에 재학습 없이 부분집합
+    분석(예: forecast now_label != forecast_label인 전환 구간만 recall/precision)을
+    할 수 있게 한다 -- 학습 로직은 그대로, 이미 메모리에 있는 oof_proba/oof_pred를
+    저장만 함. now_label은 windows['window_end_time'](=t)의 실제 물리 라벨을 ts에서
+    다시 조회한 값(forecast_min>0이면 windows['label']이 이미 미래 라벨로 덮어써져
+    있어 t 시점 값을 따로 구해야 함) -- --binary면 now_label도 y와 같은 스케일로
+    이진화해서 forecast_label(=y, 실제 학습 타깃)과 직접 비교 가능하게 맞춘다."""
+    now_label_raw = ts["label"].reindex(windows["window_end_time"]).values.astype(np.int64)
+    now_label = (now_label_raw > 0).astype(np.int64) if binary else now_label_raw
+    fold_col = windows["episode_id"].map(fold_of_episode)
+
+    oof_df = pd.DataFrame({
+        "window_end_time": windows["window_end_time"].values,
+        "episode_id": windows["episode_id"].values,
+        "fold": fold_col.values,
+        "now_label": now_label,
+        "forecast_label": y,   # 실제 학습 타깃 -- nowcast(Δt=0)면 now_label과 항상 동일
+        "y_pred": oof_pred,
+    })
+    for k, name in enumerate(label_names):
+        oof_df[f"proba_{name}"] = oof_proba[:, k]
+    oof_df = oof_df.loc[covered].reset_index(drop=True)
+    oof_df.to_parquet(out_path, index=False)
+    return oof_df
+
+
 def build_metrics_table(windows: pd.DataFrame, y: np.ndarray, oof_pred: np.ndarray,
                         fold_of_episode: dict, fold_histories: list[dict],
                         label_names: list[str], n_splits: int) -> pd.DataFrame:
@@ -250,6 +285,10 @@ def main():
         input_size=len(channels), epochs=args.epochs, patience=patience)
     oof_pred = oof_proba.argmax(axis=1)
     covered = ~np.isnan(oof_proba).any(axis=1)   # folds=1 스모크 경로는 일부만 커버됨
+
+    oof_df = save_oof_predictions(windows, ts, y, oof_proba, oof_pred, covered, fold_of_episode,
+                                  label_names, args.binary, out_dir / "oof_predictions.parquet")
+    print(f"[train_experiment] 저장 -> {out_dir / 'oof_predictions.parquet'} ({len(oof_df)}행)")
 
     diag.plot_learning_curves(fold_histories, out_dir / "learning_curves.png")
     diag.plot_confusion_matrix(y[covered], oof_pred[covered], out_dir / "confusion_matrix.png",
