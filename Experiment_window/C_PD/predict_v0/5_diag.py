@@ -70,7 +70,8 @@ LABEL_COLORS = {0: "#999999", 1: "tab:orange", 2: "tab:purple"}
 
 def run_oof(windows: pd.DataFrame, X: np.ndarray, y: np.ndarray, *,
            n_splits: int = N_SPLITS, n_classes: int = 3, input_size: int = 1,
-           epochs: int = _train.EPOCHS, patience: int | None = None):
+           epochs: int = _train.EPOCHS, patience: int | None = None,
+           checkpoint_dir: Path | None = None):
     """5-fold GroupKFold(group=episode_id)를 학습해 OOF 확률·fold별 학습곡선·
     episode_id->held-out fold 매핑을 반환. 4_eval.py의 run_5fold와 같은 분할
     로직이지만 이번엔 예측 확률/학습곡선을 저장해야 해서 별도로 돈다.
@@ -78,9 +79,16 @@ def run_oof(windows: pd.DataFrame, X: np.ndarray, y: np.ndarray, *,
     3클래스·단일채널·30epoch·조기종료 없음)과 동일 -- train_experiment.py가 다채널·
     이진·긴 학습+조기종료로 이 함수를 그대로 재사용하기 위한 일반화.
 
+    checkpoint_dir 지정 시 fold마다 학습된(best epoch로 복원된) 모델의 state_dict를
+    checkpoint_dir/fold{k}.pt로 저장(학습 로직 자체는 변경 없음 -- train_tcn 호출 뒤
+    이미 메모리에 있는 model을 디스크에 남기기만 함). 크롭 밖 전 구간 추론
+    (8_validation.py) 등 재학습 없이 나중에 모델을 다시 쓰기 위한 용도.
+
     n_splits=1은 GroupKFold가 지원하지 않는 값(sklearn 최소 2)이라 스모크 테스트 전용
     특수 경로로 처리한다 -- episode를 80/20으로 한 번만 나눠 파이프라인만 빠르게
     확인(성능 판단용 아님, val 20% 밖 윈도우는 OOF 커버리지 없이 NaN으로 남음)."""
+    if checkpoint_dir is not None:
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
     groups = windows["episode_id"].values
     n = len(windows)
     oof_proba = np.full((n, n_classes), np.nan, dtype=np.float64)
@@ -113,6 +121,8 @@ def run_oof(windows: pd.DataFrame, X: np.ndarray, y: np.ndarray, *,
         model, history, best_f1 = train_tcn(X[train_idx], y_train, X[val_idx], y_val, class_weight,
                                             epochs=epochs, patience=patience,
                                             input_size=input_size, n_classes=n_classes)
+        if checkpoint_dir is not None:
+            torch.save(model.state_dict(), checkpoint_dir / f"fold{fold}.pt")
         with torch.no_grad():
             proba = torch.softmax(model(torch.tensor(X[val_idx], dtype=torch.float32)), dim=1).numpy()
         oof_proba[val_idx] = proba

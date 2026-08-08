@@ -50,6 +50,9 @@ macro-F1 0.85) 이걸 미래로 밀어 "지금 quiet여도 Δt분 뒤 event가 �
       6_forecast_summary.py의 전환 구간 지표)을 하기 위한 원자료. now_label !=
       forecast_label 부분집합이 "전환 구간"(forecast_min=0 nowcast는 정의상 이 부분
       집합이 항상 비어 있음 -- now_label과 forecast_label이 같은 라벨이라서).
+  checkpoints/fold{k}.pt(각 fold의 best-epoch state_dict) + manifest.json(input_size/
+      n_classes/label_names/channels/window 등 모델 재구성 정보) -- 재학습 없이 크롭
+      밖 전 구간 추론(8_validation.py) 등에서 모델을 다시 쓰기 위한 체크포인트.
   exp-name 자동생성 시 forecast-min>0이면 "_fc{Δt}" 접미사가 붙어 nowcast 결과와
   안 겹침(예: omni_p6_binary_fc15).
 
@@ -280,9 +283,21 @@ def main():
           f"window_len={window}  X.shape={X.shape}  folds={args.folds}  epochs={args.epochs}  "
           f"patience={patience}")
 
+    checkpoint_dir = out_dir / "checkpoints"
     oof_proba, fold_histories, fold_of_episode = diag.run_oof(
         windows, X, y, n_splits=args.folds, n_classes=n_classes,
-        input_size=len(channels), epochs=args.epochs, patience=patience)
+        input_size=len(channels), epochs=args.epochs, patience=patience,
+        checkpoint_dir=checkpoint_dir)
+    manifest = {
+        "input_size": len(channels), "n_classes": n_classes, "label_names": label_names,
+        "channels": channels, "window": window, "num_channels": [16, 16, 16],
+        "kernel_size": 3, "dropout": 0.2, "n_folds": args.folds, "detector": args.detector,
+        "binary": args.binary, "forecast_min": args.forecast_min,
+    }
+    (checkpoint_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"[train_experiment] 저장 -> {checkpoint_dir}/fold*.pt + manifest.json "
+          f"(재학습 없이 나중에 모델을 다시 쓰기 위한 체크포인트)")
     oof_pred = oof_proba.argmax(axis=1)
     covered = ~np.isnan(oof_proba).any(axis=1)   # folds=1 스모크 경로는 일부만 커버됨
 
