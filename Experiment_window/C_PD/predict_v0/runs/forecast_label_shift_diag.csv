@@ -1,4 +1,0 @@
-forecast_min,n_windows,n_excluded_no_future_label,n_changed,pct_changed,n_quiet_to_event,n_event_to_quiet,n_unchanged
-15,78981,118,93,0.1177498385687697,47,46,78888
-30,78865,234,183,0.23204209725480254,94,89,78682
-60,78650,449,347,0.44119516846789575,183,164,78303
