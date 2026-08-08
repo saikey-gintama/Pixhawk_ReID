@@ -1,25 +1,28 @@
 """
-5_diag.py
-==========
-예측 모델 v0 -- Step 3: 진단 그림. rising recall 0.47(홀드아웃 0.38)이
-"z-score 자체가 안 두꺼워져서 못 잡는 것"(신호/피처 한계)인지 "rising/decreasing
-경계 근처에서만 헷갈리는 것"(라벨 정의 문제)인지 눈으로 판별한다. 이 판단이
-다음 단계(v1 힐베르트 포락선 vs 라벨 정의 수정)를 정한다.
+diag.py
+========
+예측 모델 v0 학습·진단 라이브러리 -- 직접 실행하지 않고 predict_v0의 다른 스크립트
+(3_train_experiment.py/4_validation.py)가 import해서 쓴다. TCN 학습(train_tcn)/
+데이터 로딩(load_dataset·feature_cols)/OOF 평가(run_oof)/진단 그림(plot_*)을
+한데 묶은 모듈 -- 원래 Step 1/Step 2 각각의 단독 스크립트에 있던 코드가 전부 이
+파일로 흡수됐다(두 스크립트는 3_train_experiment.py 도입 후 기능이 중복돼 삭제됨,
+2026-08-08 정리 -- train_tcn/feature_cols/load_dataset/LABEL_NAMES/WINDOW/
+N_SPLITS/EPOCHS는 그 삭제된 Step 1 스크립트 원본과 동일, 새로 짠 코드 아님).
+
+rising recall 0.47(홀드아웃 0.38)이 "z-score 자체가 안 두꺼워져서 못 잡는 것"(신호/
+피처 한계)인지 "rising/decreasing 경계 근처에서만 헷갈리는 것"(라벨 정의 문제)인지
+눈으로 판별하기 위한 Step 3 진단 그림 코드도 포함.
 
 재사용 (재구현 없음 -- import만):
-  3_train.py : feature_cols/train_tcn/load_dataset/LABEL_NAMES/WINDOW/N_SPLITS
-      (Step 1/2와 동일 TCN 구조·하이퍼파라미터. "3_train"은 숫자로 시작해
-      import 문 대신 importlib.import_module로 로드)
   2_build_dataset.py가 만든 timeseries_*.parquet(zscore/label/event_id 전
       구간)과 1_check_labels.py 산출물 quality_check/events_reconciled.csv
       (onset/peak/end 시각) -- 새로 계산하지 않고 그대로 읽어 오버레이에 사용.
 
-out-of-fold(OOF) 원칙: 4_eval.py와 동일한 5-fold GroupKFold(group=episode_id)를
-다시 학습하되, 이번엔 예측 확률과 학습곡선을 저장해야 해서 별도 루프로 작성
-(4_eval.py의 run_5fold와 로직은 같지만 반환값이 다름). 모든 이벤트는 자신이
-val이었던 fold의 모델로만 예측 -- train에 쓰인 모델로 그린 그림은 무의미하므로.
+out-of-fold(OOF) 원칙: 5-fold GroupKFold(group=episode_id)로 학습하며 예측 확률과
+학습곡선을 같이 저장한다. 모든 이벤트는 자신이 val이었던 fold의 모델로만 예측 --
+train에 쓰인 모델로 그린 그림은 무의미하므로.
 
-출력 (predict_v0/diag_v0/):
+출력 (predict_v0/diag_v0/, 이 파일을 직접 실행했을 때):
   learning_curves.png        : 5-fold 각 학습곡선(train/val loss, val macro-F1)
   confusion_matrix_5fold.png : 5-fold 합산 confusion matrix (OOF)
   events/event{id:03d}_*.png : 이벤트별 오버레이(상단 z-score+3상태 라벨 음영+
@@ -27,11 +30,10 @@ val이었던 fold의 모델로만 예측 -- train에 쓰인 모델로 그린 그
       (큰 이벤트/약한 이벤트/시간홀드아웃 이벤트)은 제목에 표시.
 
 사용:
-  python 5_diag.py --detector metop03 --channel omni_p6
+  python diag.py --detector metop03 --channel omni_p6
 """
 from __future__ import annotations
 import argparse
-import importlib
 import sys
 from pathlib import Path
 
@@ -41,25 +43,27 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
-from sklearn.metrics import confusion_matrix
+import torch.nn as nn
+from sklearn.metrics import confusion_matrix, f1_score
 from sklearn.model_selection import GroupKFold
 from sklearn.utils.class_weight import compute_class_weight
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-_train = importlib.import_module("3_train")  # "3_train"은 숫자로 시작 -- importlib 필요
-feature_cols = _train.feature_cols
-train_tcn = _train.train_tcn
-load_dataset = _train.load_dataset
-LABEL_NAMES = _train.LABEL_NAMES
-WINDOW = _train.WINDOW
-N_SPLITS = _train.N_SPLITS
+from tcn import TCNClassifier  # noqa: E402
 
 SEED = 0
+WINDOW = 14
+N_SPLITS = 5
+LABEL_NAMES = ["quiet", "rising", "decreasing"]
+EPOCHS = 30
+BATCH_SIZE = 256
+LR = 1e-3
+
 torch.manual_seed(SEED)
 np.random.seed(SEED)
 
-TEST_YEARS = (2024, 2025)   # 4_eval.py의 시간홀드아웃과 동일 정의(대표 이벤트 선정용)
+TEST_YEARS = (2024, 2025)   # 시간홀드아웃 정의(대표 이벤트 선정용)
 DISPLAY_PAD_DAYS = 3         # 오버레이에 보여줄 이벤트 앞뒤 여유(학습용 크롭 10일보다 좁게)
 MAX_EVENT_PLOTS = 100
 
@@ -68,21 +72,104 @@ MAX_EVENT_PLOTS = 100
 LABEL_COLORS = {0: "#999999", 1: "tab:orange", 2: "tab:purple"}
 
 
+def load_dataset(detector: str, channel: str) -> pd.DataFrame:
+    path = HERE / "dataset_v0" / f"windows_{detector}_{channel}.parquet"
+    return pd.read_parquet(path)
+
+
+def feature_cols(window: int) -> list[str]:
+    return [f"z_lag{k}" for k in range(window - 1, -1, -1)]  # 과거(lag13) -> 현재(lag0) 순
+
+
+def train_tcn(X_train, y_train, X_val, y_val, class_weight,
+             epochs: int = EPOCHS, patience: int | None = None,
+             input_size: int = 1, n_classes: int = 3,
+             lr: float = LR, batch_size: int = BATCH_SIZE, verbose: bool = True):
+    """epochs/patience/input_size/n_classes는 전부 기본값이 기존 Step 1/2/3의 하드코딩
+    (30epoch·조기종료 없음·단일채널·3클래스)과 동일해서, 이 4개를 안 넘기는 호출은
+    동작이 그대로다. 3_train_experiment.py가 다채널(input_size=len(channels))·이진
+    (n_classes=2)·긴 학습+조기종료(epochs/patience)를 쓰기 위해 이 함수 하나를
+    그대로 재사용(재구현 없음, 원본은 삭제된 옛 Step 1 스크립트)."""
+    model = TCNClassifier(input_size=input_size, num_channels=(16, 16, 16), kernel_size=3,
+                          dropout=0.2, n_classes=n_classes)
+    opt = torch.optim.Adam(model.parameters(), lr=lr)
+    criterion = nn.CrossEntropyLoss(weight=torch.tensor(class_weight, dtype=torch.float32))
+
+    Xtr = torch.tensor(X_train, dtype=torch.float32)
+    ytr = torch.tensor(y_train, dtype=torch.long)
+    Xva = torch.tensor(X_val, dtype=torch.float32)
+    yva = torch.tensor(y_val, dtype=torch.long)
+
+    n = len(Xtr)
+    history = {"train_loss": [], "val_loss": [], "val_macro_f1": []}
+    best_f1, best_state, best_epoch = -1.0, None, 0
+    epochs_since_improve = 0
+    stopped_epoch = epochs
+
+    for epoch in range(1, epochs + 1):
+        model.train()
+        perm = torch.randperm(n)
+        total_loss = 0.0
+        for i in range(0, n, batch_size):
+            idx = perm[i:i + batch_size]
+            xb, yb = Xtr[idx], ytr[idx]
+            opt.zero_grad()
+            out = model(xb)
+            loss = criterion(out, yb)
+            loss.backward()
+            opt.step()
+            total_loss += loss.item() * len(idx)
+        train_loss = total_loss / n
+
+        model.eval()
+        with torch.no_grad():
+            val_out = model(Xva)
+            val_loss = criterion(val_out, yva).item()
+            val_pred = val_out.argmax(dim=1).numpy()
+        val_f1 = f1_score(y_val, val_pred, average="macro", zero_division=0)
+
+        history["train_loss"].append(train_loss)
+        history["val_loss"].append(val_loss)
+        history["val_macro_f1"].append(val_f1)
+        if verbose:
+            print(f"[tcn] epoch {epoch:02d}  train_loss={train_loss:.4f}  "
+                  f"val_loss={val_loss:.4f}  val_macro_f1={val_f1:.4f}")
+
+        if val_f1 > best_f1:
+            best_f1 = val_f1
+            best_state = {k: v.clone() for k, v in model.state_dict().items()}
+            best_epoch = epoch
+            epochs_since_improve = 0
+        else:
+            epochs_since_improve += 1
+
+        if patience is not None and epochs_since_improve >= patience:
+            stopped_epoch = epoch
+            if verbose:
+                print(f"[tcn] early stop @ epoch {epoch} (best epoch {best_epoch}, patience={patience})")
+            break
+
+    model.load_state_dict(best_state)
+    history["best_epoch"] = best_epoch
+    history["stopped_epoch"] = stopped_epoch
+    return model, history, best_f1
+
+
 def run_oof(windows: pd.DataFrame, X: np.ndarray, y: np.ndarray, *,
            n_splits: int = N_SPLITS, n_classes: int = 3, input_size: int = 1,
-           epochs: int = _train.EPOCHS, patience: int | None = None,
+           epochs: int = EPOCHS, patience: int | None = None,
            checkpoint_dir: Path | None = None):
     """5-fold GroupKFold(group=episode_id)를 학습해 OOF 확률·fold별 학습곡선·
-    episode_id->held-out fold 매핑을 반환. 4_eval.py의 run_5fold와 같은 분할
-    로직이지만 이번엔 예측 확률/학습곡선을 저장해야 해서 별도로 돈다.
-    n_splits/n_classes/input_size/epochs/patience 기본값은 5_diag.py 자체 실행(Step 3,
-    3클래스·단일채널·30epoch·조기종료 없음)과 동일 -- train_experiment.py가 다채널·
-    이진·긴 학습+조기종료로 이 함수를 그대로 재사용하기 위한 일반화.
+    episode_id->held-out fold 매핑을 반환(이번엔 예측 확률/학습곡선을 저장해야 해서
+    별도 루프로 작성). n_splits/n_classes/input_size/epochs/patience 기본값은
+    diag.py 자체 실행(Step 3, 3클래스·단일채널·30epoch·조기종료 없음)과 동일 --
+    3_train_experiment.py가 다채널·이진·긴 학습+조기종료로 이 함수를 그대로
+    재사용하기 위한 일반화.
 
     checkpoint_dir 지정 시 fold마다 학습된(best epoch로 복원된) 모델의 state_dict를
     checkpoint_dir/fold{k}.pt로 저장(학습 로직 자체는 변경 없음 -- train_tcn 호출 뒤
     이미 메모리에 있는 model을 디스크에 남기기만 함). 크롭 밖 전 구간 추론
-    (8_validation.py) 등 재학습 없이 나중에 모델을 다시 쓰기 위한 용도.
+    (4_validation.py) 등 재학습 없이 나중에 모델을 다시 쓰기 위한 용도.
 
     n_splits=1은 GroupKFold가 지원하지 않는 값(sklearn 최소 2)이라 스모크 테스트 전용
     특수 경로로 처리한다 -- episode를 80/20으로 한 번만 나눠 파이프라인만 빠르게

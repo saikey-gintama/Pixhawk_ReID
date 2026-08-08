@@ -1,16 +1,16 @@
 """
-train_experiment.py
-=====================
+3_train_experiment.py
+=======================
 predict_v0 v0 실험 3종(단일채널 3클래스/단일채널 이진/다채널 3클래스)을 인자 조합
-하나로 표현하는 통합 러너. Step 1(3_train.py)/Step 2(4_eval.py)/Step 3(5_diag.py)의
-TCN 학습·OOF 평가·진단 그림 코드를 그대로 재사용(재구현 없음) -- 이 스크립트는
-그 위에 (a) 이진 라벨 병합, (b) 다채널 피처 스태킹, (c) epochs/patience 조기종료를
-CLI 인자로 노출하는 오케스트레이션만 새로 짠다.
+하나로 표현하는 통합 러너. diag.py(TCN 학습·OOF 평가·진단 그림 코드)를 그대로
+재사용(재구현 없음) -- 이 스크립트는 그 위에 (a) 이진 라벨 병합, (b) 다채널 피처
+스태킹, (c) epochs/patience 조기종료를 CLI 인자로 노출하는 오케스트레이션만
+새로 짠다.
 
-재사용 (재구현 없음 -- import만, 전부 숫자로 시작하는 모듈이라 importlib):
-  3_train.py : load_dataset/feature_cols/train_tcn(epochs/patience/input_size/
-      n_classes로 일반화됨)/LABEL_NAMES -- 5_diag.py를 통해 접근.
-  5_diag.py  : run_oof(n_splits/n_classes/input_size/epochs/patience로 일반화),
+재사용 (재구현 없음 -- import만):
+  diag.py(숫자로 시작하지 않는 라이브러리라 일반 import) : load_dataset/feature_cols/
+      train_tcn(epochs/patience/input_size/n_classes로 일반화됨)/LABEL_NAMES,
+      run_oof(n_splits/n_classes/input_size/epochs/patience로 일반화),
       plot_learning_curves, plot_confusion_matrix(label_names로 일반화),
       plot_event_overlay(label_names/label_colors/label_transform로 일반화),
       pick_representatives, MAX_EVENT_PLOTS, LABEL_COLORS.
@@ -47,34 +47,33 @@ macro-F1 0.85) 이걸 미래로 밀어 "지금 quiet여도 Δt분 뒤 event가 �
   run_config.json(실행 인자 전부 -- 재현용)
   oof_predictions.parquet(window_end_time, episode_id, fold, now_label, forecast_label
       (=학습 타깃), y_pred, proba_<클래스명>...) -- 재학습 없이 부분집합 분석(예:
-      6_forecast_summary.py의 전환 구간 지표)을 하기 위한 원자료. now_label !=
+      5_forecast_summary.py의 전환 구간 지표)을 하기 위한 원자료. now_label !=
       forecast_label 부분집합이 "전환 구간"(forecast_min=0 nowcast는 정의상 이 부분
       집합이 항상 비어 있음 -- now_label과 forecast_label이 같은 라벨이라서).
   checkpoints/fold{k}.pt(각 fold의 best-epoch state_dict) + manifest.json(input_size/
       n_classes/label_names/channels/window 등 모델 재구성 정보) -- 재학습 없이 크롭
-      밖 전 구간 추론(8_validation.py) 등에서 모델을 다시 쓰기 위한 체크포인트.
+      밖 전 구간 추론(4_validation.py) 등에서 모델을 다시 쓰기 위한 체크포인트.
   exp-name 자동생성 시 forecast-min>0이면 "_fc{Δt}" 접미사가 붙어 nowcast 결과와
   안 겹침(예: omni_p6_binary_fc15).
 
 사용:
   # 실험1: 단일채널 3클래스
-  python train_experiment.py --channels omni_p6 --epochs 100 --patience 15
+  python 3_train_experiment.py --channels omni_p6 --epochs 100 --patience 15
   # 실험2: 단일채널 이진 (nowcast, Δt=0 기준선)
-  python train_experiment.py --channels omni_p6 --binary --epochs 100 --patience 15
+  python 3_train_experiment.py --channels omni_p6 --binary --epochs 100 --patience 15
   # 실험3: 다채널 3클래스 (먼저 다채널 데이터셋 생성 필요)
   python 2_build_dataset.py --channels omni_p6,omni_p7,pro_tel0_p5
-  python train_experiment.py --channels omni_p6,omni_p7,pro_tel0_p5 --epochs 100 --patience 15
+  python 3_train_experiment.py --channels omni_p6,omni_p7,pro_tel0_p5 --epochs 100 --patience 15
   # 이진 forecast Δt 스윕 (15/30/60분)
-  python train_experiment.py --channels omni_p6 --binary --forecast-min 15 --epochs 100 --patience 15
-  python train_experiment.py --channels omni_p6 --binary --forecast-min 30 --epochs 100 --patience 15
-  python train_experiment.py --channels omni_p6 --binary --forecast-min 60 --epochs 100 --patience 15
+  python 3_train_experiment.py --channels omni_p6 --binary --forecast-min 15 --epochs 100 --patience 15
+  python 3_train_experiment.py --channels omni_p6 --binary --forecast-min 30 --epochs 100 --patience 15
+  python 3_train_experiment.py --channels omni_p6 --binary --forecast-min 60 --epochs 100 --patience 15
   # 스모크 테스트(긴 학습 없이 파이프라인만 확인)
-  python train_experiment.py --channels omni_p6 --epochs 2 --folds 1 --exp-name smoke1 --force
-  python train_experiment.py --channels omni_p6 --binary --forecast-min 15 --epochs 2 --folds 1 --exp-name smoke_fc15 --force
+  python 3_train_experiment.py --channels omni_p6 --epochs 2 --folds 1 --exp-name smoke1 --force
+  python 3_train_experiment.py --channels omni_p6 --binary --forecast-min 15 --epochs 2 --folds 1 --exp-name smoke_fc15 --force
 """
 from __future__ import annotations
 import argparse
-import importlib
 import json
 import sys
 from pathlib import Path
@@ -86,10 +85,7 @@ from sklearn.metrics import f1_score, precision_recall_fscore_support
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-# "5_diag"/"3_train"은 숫자로 시작해 import 문 대신 importlib로 로드(0_label_events_gui.py
-# 참고). 5_diag가 내부에서 3_train을 이미 importlib로 로드해 자기 모듈 이름공간에
-# 노출해 두므로(diag.feature_cols 등), 여기서는 5_diag 하나만 가져오면 충분하다.
-diag = importlib.import_module("5_diag")
+import diag  # noqa: E402  -- "diag"는 숫자로 시작하지 않아 일반 import로 충분
 
 BINARY_LABEL_NAMES = ["quiet", "event"]
 BINARY_LABEL_COLORS = {0: "#999999", 1: "tab:orange"}
@@ -102,7 +98,7 @@ def load_windows(detector: str, channels: list[str]) -> pd.DataFrame:
     path = HERE / "dataset_v0" / f"windows_{detector}_{tag}.parquet"
     if not path.exists():
         raise SystemExit(
-            f"[train_experiment] {path} 없음 -- 다채널 실험은 먼저 데이터셋을 만들어야 합니다:\n"
+            f"[3_train_experiment] {path} 없음 -- 다채널 실험은 먼저 데이터셋을 만들어야 합니다:\n"
             f"  python 2_build_dataset.py --detector {detector} --channels {','.join(channels)}")
     return pd.read_parquet(path)
 
@@ -133,7 +129,7 @@ def apply_forecast_shift(windows: pd.DataFrame, ts: pd.DataFrame, forecast_min: 
     if forecast_min <= 0:
         return windows
     if forecast_min % 15 != 0:
-        raise SystemExit(f"[train_experiment] --forecast-min은 15의 배수여야 합니다(15분 격자): {forecast_min}")
+        raise SystemExit(f"[3_train_experiment] --forecast-min은 15의 배수여야 합니다(15분 격자): {forecast_min}")
 
     future_time = windows["window_end_time"] + pd.Timedelta(minutes=forecast_min)
     future_label = ts["label"].reindex(future_time).values
@@ -143,7 +139,7 @@ def apply_forecast_shift(windows: pd.DataFrame, ts: pd.DataFrame, forecast_min: 
     n_before = len(windows)
     out = windows.loc[keep].reset_index(drop=True).copy()
     out["label"] = future_label[keep].astype(np.int64)
-    print(f"[train_experiment] forecast +{forecast_min}min 라벨 시프트: {n_before}개 -> {len(out)}개 "
+    print(f"[3_train_experiment] forecast +{forecast_min}min 라벨 시프트: {n_before}개 -> {len(out)}개 "
           f"윈도우(미래 라벨 없음 {n_before - len(out)}개 제외)")
 
     sample_idx = np.where(keep)[0][:3]
@@ -240,7 +236,7 @@ def main():
                     help="val macro-F1 개선 없이 버티는 epoch 수(조기종료 기준). 0 이하면 비활성화")
     ap.add_argument("--folds", type=int, default=5,
                     help="GroupKFold 수. 1은 스모크 테스트 전용 특수경로(80/20 1회 분할, "
-                         "OOF 부분 커버리지 -- 5_diag.run_oof 참고, 성능 판단용 아님)")
+                         "OOF 부분 커버리지 -- diag.run_oof 참고, 성능 판단용 아님)")
     ap.add_argument("--exp-name", default=None, help="predict_v0/runs/<exp-name>/. 생략 시 "
                     "channels+binary로 자동 생성(예: omni_p6_3class, omni_p6_binary)")
     ap.add_argument("--seed", type=int, default=0)
@@ -258,7 +254,7 @@ def main():
     exp_name = args.exp_name or ("_".join(channels) + ("_binary" if args.binary else "_3class") + fc_suffix)
     out_dir = Path(args.out_dir) if args.out_dir else HERE / "runs" / exp_name
     if out_dir.exists() and not args.force:
-        raise SystemExit(f"[train_experiment] {out_dir} 이미 존재합니다 -- 다른 --exp-name을 쓰거나 "
+        raise SystemExit(f"[3_train_experiment] {out_dir} 이미 존재합니다 -- 다른 --exp-name을 쓰거나 "
                          f"--force로 덮어쓰세요(기존 실험 결과 보호).")
     events_dir = out_dir / "events"
     events_dir.mkdir(parents=True, exist_ok=True)
@@ -278,7 +274,7 @@ def main():
     label_colors = BINARY_LABEL_COLORS if args.binary else diag.LABEL_COLORS
     label_transform = (lambda arr: (arr > 0).astype(int)) if args.binary else None
 
-    print(f"[train_experiment] exp={exp_name}  channels={channels}  binary={args.binary}  "
+    print(f"[3_train_experiment] exp={exp_name}  channels={channels}  binary={args.binary}  "
           f"forecast_min={args.forecast_min}  n_classes={n_classes}  windows={len(windows)}  "
           f"window_len={window}  X.shape={X.shape}  folds={args.folds}  epochs={args.epochs}  "
           f"patience={patience}")
@@ -296,14 +292,14 @@ def main():
     }
     (checkpoint_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"[train_experiment] 저장 -> {checkpoint_dir}/fold*.pt + manifest.json "
+    print(f"[3_train_experiment] 저장 -> {checkpoint_dir}/fold*.pt + manifest.json "
           f"(재학습 없이 나중에 모델을 다시 쓰기 위한 체크포인트)")
     oof_pred = oof_proba.argmax(axis=1)
     covered = ~np.isnan(oof_proba).any(axis=1)   # folds=1 스모크 경로는 일부만 커버됨
 
     oof_df = save_oof_predictions(windows, ts, y, oof_proba, oof_pred, covered, fold_of_episode,
                                   label_names, args.binary, out_dir / "oof_predictions.parquet")
-    print(f"[train_experiment] 저장 -> {out_dir / 'oof_predictions.parquet'} ({len(oof_df)}행)")
+    print(f"[3_train_experiment] 저장 -> {out_dir / 'oof_predictions.parquet'} ({len(oof_df)}행)")
 
     diag.plot_learning_curves(fold_histories, out_dir / "learning_curves.png")
     diag.plot_confusion_matrix(y[covered], oof_pred[covered], out_dir / "confusion_matrix.png",
@@ -312,7 +308,7 @@ def main():
     metrics_df = build_metrics_table(windows, y, oof_pred, fold_of_episode, fold_histories,
                                      label_names, args.folds)
     metrics_df.to_csv(out_dir / "metrics.csv", index=False)
-    print(f"[train_experiment] 저장 -> {out_dir / 'metrics.csv'}")
+    print(f"[3_train_experiment] 저장 -> {out_dir / 'metrics.csv'}")
     print(metrics_df.to_string(index=False))
 
     run_config = {
@@ -322,7 +318,7 @@ def main():
     }
     (out_dir / "run_config.json").write_text(
         json.dumps(run_config, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"[train_experiment] 저장 -> {out_dir / 'run_config.json'}")
+    print(f"[3_train_experiment] 저장 -> {out_dir / 'run_config.json'}")
 
     # 이벤트 오버레이: 상단 z-score+라벨 음영은 forecast 여부와 무관하게 항상 실제
     # 물리 상태(nowcast, t 시점) 기준 -- ts는 위에서 이미 로드해 둔 것 그대로 재사용.
@@ -331,7 +327,7 @@ def main():
     episode_of_event = windows[windows["event_id"] >= 0].groupby("event_id")["episode_id"].first().to_dict()
     amb_of_event = windows[windows["event_id"] >= 0].groupby("event_id")["ambiguous_peak"].any().to_dict()
     reps = diag.pick_representatives(events, windows)
-    print(f"[train_experiment] 대표 이벤트: {reps}")
+    print(f"[3_train_experiment] 대표 이벤트: {reps}")
 
     ev_ids = sorted(episode_of_event.keys())[:diag.MAX_EVENT_PLOTS]
     saved = []
@@ -348,8 +344,8 @@ def main():
                                     amb_of_event, events_dir, tag=tag, label_names=label_names,
                                     label_colors=label_colors, label_transform=label_transform)
         saved.append(p)
-    print(f"[train_experiment] 이벤트 오버레이 {len(saved)}장 저장 -> {events_dir}")
-    print(f"\n[train_experiment] 전체 산출물 -> {out_dir}")
+    print(f"[3_train_experiment] 이벤트 오버레이 {len(saved)}장 저장 -> {events_dir}")
+    print(f"\n[3_train_experiment] 전체 산출물 -> {out_dir}")
 
 
 if __name__ == "__main__":

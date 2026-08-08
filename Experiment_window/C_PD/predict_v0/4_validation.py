@@ -1,9 +1,9 @@
 """
-8_validation.py
+4_validation.py
 =================
 FSM(규칙 트리거)과 TCN(학습 분류기)을 동일 조건에서 두 정답(NOAA SPE 카탈로그,
 손라벨)에 대해 각각 평가해 2x2 비교표를 만든다. 기존 산출물만 소비 -- 학습·재학습
-없음(TCN은 train_experiment.py가 저장한 checkpoints/fold{k}.pt + manifest.json을
+없음(TCN은 3_train_experiment.py가 저장한 checkpoints/fold{k}.pt + manifest.json을
 불러와 추론만 한다).
 
 재사용 (재구현 없음 -- import만):
@@ -24,7 +24,7 @@ FSM(규칙 트리거)과 TCN(학습 분류기)을 동일 조건에서 두 정답
   0_label_events_gui.py : load_channel_series(전 구간 count 로드).
   tcn.py : TCNClassifier -- manifest.json으로 구조 복원, checkpoints/fold{k}.pt로
       가중치 로드(학습 안 함, 추론만).
-  5_diag.py : _shade_labels(대표 이벤트 그림의 정답 구간 음영), pick_representatives.
+  diag.py : _shade_labels(대표 이벤트 그림의 정답 구간 음영), pick_representatives.
 
 조건 통일:
   1. 채널: 단일(omni_p6) / 다채널(omni_p6,omni_p7,pro_tel0_p5) 둘 다 평가.
@@ -59,11 +59,11 @@ FSM(규칙 트리거)과 TCN(학습 분류기)을 동일 조건에서 두 정답
   pr_curve_{channel_config}.png : precision-recall 곡선(정답별 2선) + 운용점 2개 표시.
   event_overlay/event{id}_*.png : FSM onset vs TCN onset 비교(대표 3개, 정답 구간 음영).
 
-TCN 체크포인트가 없는 run(train_experiment.py의 checkpoint 저장 기능 이전에 돌린
+TCN 체크포인트가 없는 run(3_train_experiment.py의 checkpoint 저장 기능 이전에 돌린
 run)은 그 채널 구성의 TCN 결과를 건너뛰고 경고만 출력 -- 학습을 대신 돌리지 않는다.
 
 사용:
-  python 8_validation.py --single-run omni_p6_binary --multi-run omni_p6_omni_p7_pro_tel0_p5_3class
+  python 4_validation.py --single-run omni_p6_binary --multi-run omni_p6_omni_p7_pro_tel0_p5_3class
 """
 from __future__ import annotations
 import argparse
@@ -88,10 +88,12 @@ sys.path.insert(0, str(C_PD / "POES" / "count_FSM"))
 
 import _match_core_poes as core                              # noqa: E402
 import fsm_count_spe_quietoff_mad_poes as fsm_engine          # noqa: E402
-check = importlib.import_module("1_check_labels")             # noqa: E402  (숫자 시작 -- importlib)
+import diag                                                    # noqa: E402  -- 숫자로 시작 안 해 일반 import
+# "1_check_labels"/"2_build_dataset"/"3_train_experiment"는 숫자로 시작해 import 문
+# 대신 importlib.import_module로 로드(0_label_events_gui.py 참고).
+check = importlib.import_module("1_check_labels")             # noqa: E402
 bd = importlib.import_module("2_build_dataset")                # noqa: E402
-te = importlib.import_module("train_experiment")               # noqa: E402  (일반 import 가능하지만 일관성상 통일)
-diag = importlib.import_module("5_diag")                       # noqa: E402
+te = importlib.import_module("3_train_experiment")             # noqa: E402
 load_channel_series = importlib.import_module("0_label_events_gui").load_channel_series  # noqa: E402
 from tcn import TCNClassifier                                  # noqa: E402
 
@@ -143,13 +145,13 @@ def load_fsm_onsets(channels: list[str]) -> pd.DataFrame:
 
 def load_tcn_ensemble(run_dir: Path):
     """checkpoints/fold{k}.pt + manifest.json 로드. 체크포인트가 없으면(이 run이
-    train_experiment.py의 checkpoint 저장 기능 이전에 돌았으면) None 반환 --
+    3_train_experiment.py의 checkpoint 저장 기능 이전에 돌았으면) None 반환 --
     호출부에서 그 채널 구성의 TCN 평가를 건너뛴다(학습 대신 돌리지 않음)."""
     ckpt_dir = run_dir / "checkpoints"
     manifest_path = ckpt_dir / "manifest.json"
     if not manifest_path.exists():
-        print(f"[validation] 경고: {ckpt_dir}에 manifest.json 없음 -- 이 run은 "
-              f"checkpoint 저장 기능(train_experiment.py) 이전에 돌았을 가능성 -- "
+        print(f"[4_validation] 경고: {ckpt_dir}에 manifest.json 없음 -- 이 run은 "
+              f"checkpoint 저장 기능(3_train_experiment.py) 이전에 돌았을 가능성 -- "
               f"TCN 평가를 건너뜁니다. 재실행하면 나옵니다.")
         return None
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -157,7 +159,7 @@ def load_tcn_ensemble(run_dir: Path):
     for fold in range(manifest["n_folds"]):
         fp = ckpt_dir / f"fold{fold}.pt"
         if not fp.exists():
-            print(f"[validation] 경고: {fp} 없음 -- 이 run의 TCN 평가를 건너뜁니다.")
+            print(f"[4_validation] 경고: {fp} 없음 -- 이 run의 TCN 평가를 건너뜁니다.")
             return None
         model = TCNClassifier(input_size=manifest["input_size"],
                               num_channels=tuple(manifest["num_channels"]),
@@ -166,7 +168,7 @@ def load_tcn_ensemble(run_dir: Path):
         model.load_state_dict(torch.load(fp, weights_only=True))
         model.eval()
         models.append(model)
-    print(f"[validation] {run_dir.name}: fold {len(models)}개 체크포인트 로드 완료 "
+    print(f"[4_validation] {run_dir.name}: fold {len(models)}개 체크포인트 로드 완료 "
           f"(channels={manifest['channels']}, n_classes={manifest['n_classes']})")
     return models, manifest
 
@@ -180,7 +182,7 @@ def build_full_features(detector: str, channels: list[str], window: int):
     ts = ts.set_index("time")
     z_series = [ts["zscore"]]
     for ch in channels[1:]:
-        print(f"[validation] 추가 채널 {ch} 전 구간 z-score 계산 중")
+        print(f"[4_validation] 추가 채널 {ch} 전 구간 z-score 계산 중")
         z_series.append(bd.compute_channel_zscore(detector, ch, 7, ts.index))
 
     if len(channels) == 1:
@@ -307,7 +309,7 @@ def plot_pr_curve(sweep_df: pd.DataFrame, cat_names: list[str], ops: dict, out_p
     fig.tight_layout()
     fig.savefig(out_path, dpi=120)
     plt.close(fig)
-    print(f"[validation] 저장 -> {out_path}")
+    print(f"[4_validation] 저장 -> {out_path}")
 
 
 def plot_detector_overlay(event_id: int, ev_row: pd.Series, ts_primary: pd.DataFrame,
@@ -360,7 +362,7 @@ def evaluate_channel_config(config_name: str, channels: list[str], tcn_run: str 
 
     # -- FSM (기존 산출물, 재계산 없음) --
     fsm_det = load_fsm_onsets(channels)
-    print(f"[validation] FSM raw onset {len(fsm_det)}개(channels={channels})")
+    print(f"[4_validation] FSM raw onset {len(fsm_det)}개(channels={channels})")
     for cat_name, cat in catalogs.items():
         r = match_cell(fsm_det, cat)
         rows.append({"detector": "FSM", "channel_config": config_name, "ground_truth": cat_name,
@@ -375,7 +377,7 @@ def evaluate_channel_config(config_name: str, channels: list[str], tcn_run: str 
             models, manifest = loaded
             window = manifest["window"]
             X, time_idx, ts_primary = build_full_features(detector, channels, window)
-            print(f"[validation] 전 구간 피처 {X.shape}, 시간범위 {time_idx.min()} ~ {time_idx.max()}")
+            print(f"[4_validation] 전 구간 피처 {X.shape}, 시간범위 {time_idx.min()} ~ {time_idx.max()}")
             p_event = pd.Series(ensemble_event_proba(models, manifest, X), index=time_idx)
 
             sweep_df = sweep_thresholds(p_event, thresholds, catalogs)
@@ -428,9 +430,9 @@ def main():
     thresholds = ([float(t) for t in args.thresholds.split(",")]
                   if args.thresholds else DEFAULT_THRESHOLDS)
 
-    print("[validation] 정답 카탈로그 로드 중")
+    print("[4_validation] 정답 카탈로그 로드 중")
     catalogs = {"noaa": load_noaa_catalog(), "manual": load_manual_catalog()}
-    print(f"[validation] NOAA SPE {len(catalogs['noaa'])}개(ERA 필터 후), "
+    print(f"[4_validation] NOAA SPE {len(catalogs['noaa'])}개(ERA 필터 후), "
           f"손라벨(완결) {len(catalogs['manual'])}개")
 
     configs = [
@@ -446,16 +448,16 @@ def main():
         all_rows.extend(rows)
         if sweep_df is not None:
             sweep_df.to_csv(out_dir / f"threshold_sweep_{config_name}.csv", index=False)
-            print(f"[validation] 저장 -> {out_dir / f'threshold_sweep_{config_name}.csv'}")
+            print(f"[4_validation] 저장 -> {out_dir / f'threshold_sweep_{config_name}.csv'}")
             plot_pr_curve(sweep_df, list(catalogs), tcn_result["ops"],
                          out_dir / f"pr_curve_{config_name}.png")
         tcn_results[config_name] = tcn_result
 
     comparison = pd.DataFrame(all_rows)
     comparison.to_csv(out_dir / "comparison_table.csv", index=False)
-    print(f"\n[validation] 2x2(+연산점) 비교표 저장 -> {out_dir / 'comparison_table.csv'}")
+    print(f"\n[4_validation] 2x2(+연산점) 비교표 저장 -> {out_dir / 'comparison_table.csv'}")
     print(comparison.to_string(index=False))
-    print("\n[validation] 주의: TCN x 손라벨 칸은 라벨 정의를 공유해 구조적으로 유리함 -- "
+    print("\n[4_validation] 주의: TCN x 손라벨 칸은 라벨 정의를 공유해 구조적으로 유리함 -- "
           "교차 칸(TCN x NOAA, FSM x 손라벨)이 더 공정한 비교.")
 
     # -- 대표 이벤트 오버레이 3장 (single 채널 TCN 결과가 있으면 그걸로, 없으면 FSM만) --
@@ -466,7 +468,7 @@ def main():
     events = events.dropna(subset=["onset_time", "peak_time", "end_time"])
     reps = diag.pick_representatives(events, windows_meta)
     rep_ids = [v for v in reps.values() if v is not None]
-    print(f"[validation] 대표 이벤트: {reps}")
+    print(f"[4_validation] 대표 이벤트: {reps}")
 
     fsm_det_single = load_fsm_onsets([args.single_channels.split(",")[0]])
     tcn_det_single = None
@@ -489,8 +491,8 @@ def main():
         p = plot_detector_overlay(eid, row.iloc[0], ts_primary_single, fsm_det_single,
                                   tcn_det_single, events_dir)
         saved.append(p)
-    print(f"[validation] 대표 이벤트 오버레이 {len(saved)}장 저장 -> {events_dir}")
-    print(f"\n[validation] 전체 산출물 -> {out_dir}")
+    print(f"[4_validation] 대표 이벤트 오버레이 {len(saved)}장 저장 -> {events_dir}")
+    print(f"\n[4_validation] 전체 산출물 -> {out_dir}")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 """
-6_forecast_summary.py
+5_forecast_summary.py
 =======================
-train_experiment.py --forecast-min 스윕(0/15/30/60...)으로 나온 여러
+3_train_experiment.py --forecast-min 스윕(0/15/30/60...)으로 나온 여러
 runs/<exp-name>/ 의 metrics.csv(mean 행)와 run_config.json(forecast_min)을
 모아 Δt별 macro-F1 + 클래스별 precision/recall/f1 표 하나로 취합한다.
 "Δt vs 성능" trade-off를 사람이 그래프로 보기 위한 취합 도구 -- 학습은 안 함,
@@ -9,7 +9,7 @@ runs/<exp-name>/ 의 metrics.csv(mean 행)와 run_config.json(forecast_min)을
 
 전체 평균 macro-F1(위 metrics.csv 기반 컬럼들)은 now_label==forecast_label인
 윈도우가 99%대라 거의 안 바뀐 라벨에 희석돼 forecast 능력을 잘 못 보여준다
-(7_forecast_shift_diag.py에서 Δt<=60분의 라벨 변경 비율이 0.1~0.4%뿐임을 확인).
+(6_forecast_shift_diag.py에서 Δt<=60분의 라벨 변경 비율이 0.1~0.4%뿐임을 확인).
 그래서 oof_predictions.parquet(now_label, forecast_label, y_pred, proba_*)가
 있는 run에 한해 now_label != forecast_label인 "전환 구간"만 따로 뽑아
 recall/precision/f1을 transition_* 컬럼으로 추가한다 -- 실제 forecast 능력
@@ -21,8 +21,8 @@ transition_* 컬럼이 NaN으로 남는다(0으로 채우지 않음 -- "측정 �
 재사용 (재구현 없음 -- import만): 없음(순수 집계, 이미 저장된 CSV/JSON/parquet만 읽음).
 
 사용:
-  python 6_forecast_summary.py --runs omni_p6_binary,omni_p6_binary_fc15,omni_p6_binary_fc30,omni_p6_binary_fc60
-  (각 이름은 predict_v0/runs/ 아래 실제 폴더명과 일치해야 함 -- train_experiment.py
+  python 5_forecast_summary.py --runs omni_p6_binary,omni_p6_binary_fc15,omni_p6_binary_fc30,omni_p6_binary_fc60
+  (각 이름은 predict_v0/runs/ 아래 실제 폴더명과 일치해야 함 -- 3_train_experiment.py
   실행 시 --exp-name을 생략했다면 자동생성 규칙: {channels}_{binary|3class}[_fc{Δt}])
 """
 from __future__ import annotations
@@ -65,8 +65,8 @@ def load_run(run_dir: Path) -> dict:
     metrics_path = run_dir / "metrics.csv"
     config_path = run_dir / "run_config.json"
     if not metrics_path.exists() or not config_path.exists():
-        raise SystemExit(f"[forecast_summary] {run_dir} 에 metrics.csv/run_config.json이 없습니다 "
-                         f"-- train_experiment.py를 이 exp-name으로 먼저 돌렸는지 확인하세요.")
+        raise SystemExit(f"[5_forecast_summary] {run_dir} 에 metrics.csv/run_config.json이 없습니다 "
+                         f"-- 3_train_experiment.py를 이 exp-name으로 먼저 돌렸는지 확인하세요.")
     config = json.loads(config_path.read_text(encoding="utf-8"))
     metrics = pd.read_csv(metrics_path)
     mean_row = metrics.loc[metrics["fold"] == "mean"].iloc[0].to_dict()
@@ -91,7 +91,7 @@ def main():
 
     label_names_set = {tuple(r["label_names"]) for r in rows}
     if len(label_names_set) > 1:
-        raise SystemExit(f"[forecast_summary] 취합 대상 run들의 클래스 구성이 서로 다릅니다: "
+        raise SystemExit(f"[5_forecast_summary] 취합 대상 run들의 클래스 구성이 서로 다릅니다: "
                          f"{label_names_set} -- 같은 --binary 여부/클래스 수끼리만 비교하세요.")
 
     for r in rows:
@@ -105,14 +105,15 @@ def main():
     missing_oof = [r["exp_name"] for r in df.to_dict("records")
                   if pd.isna(r.get("n_transition_windows"))]
     if missing_oof:
-        print(f"[forecast_summary] 참고: {missing_oof}는 oof_predictions.parquet이 없어 "
+        print(f"[5_forecast_summary] 참고: {missing_oof}는 oof_predictions.parquet이 없어 "
               f"transition_* 지표를 못 냄(--forecast-min 도입 이전에 돌린 run -- 재실행해야 나옴).\n")
 
     out_path = Path(args.out) if args.out else HERE / "runs" / "forecast_summary.csv"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_path, index=False)
-    print(f"[forecast_summary] Δt별 성능 취합 ({len(df)}개 실험):")
+    print(f"[5_forecast_summary] Δt별 성능 취합 ({len(df)}개 실험):")
     print(df.to_string(index=False))
-    print(f"\n[forecast_summary] 저장 -> {out_path}")
+    print(f"\n[5_forecast_summary] 저장 -> {out_path}")
 
 
 if __name__ == "__main__":
