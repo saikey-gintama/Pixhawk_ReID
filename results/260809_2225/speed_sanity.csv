@@ -1,0 +1,5 @@
+metric,median_1800x_ms,median_7200x_ms,rel_diff,tol,pass,rdir_1800,rdir_7200
+M1,1.0384,0.9817,0.05460323574730352,0.2,True,/home/moon/jeongin/Pixhawk_ReID/results/20260809_232850_b_fsm_strong_repspeedsanity1800x,/home/moon/jeongin/Pixhawk_ReID/results/20260809_233703_b_fsm_strong_repspeedsanity7200x
+M2,0.14,0.1322,0.055714285714285716,0.2,True,/home/moon/jeongin/Pixhawk_ReID/results/20260809_232850_b_fsm_strong_repspeedsanity1800x,/home/moon/jeongin/Pixhawk_ReID/results/20260809_233703_b_fsm_strong_repspeedsanity7200x
+M3,0.0288,0.0268,0.06944444444444439,0.2,True,/home/moon/jeongin/Pixhawk_ReID/results/20260809_232850_b_fsm_strong_repspeedsanity1800x,/home/moon/jeongin/Pixhawk_ReID/results/20260809_233703_b_fsm_strong_repspeedsanity7200x
+M5,0.638,0.57,0.10658307210031358,0.2,True,/home/moon/jeongin/Pixhawk_ReID/results/20260809_232850_b_fsm_strong_repspeedsanity1800x,/home/moon/jeongin/Pixhawk_ReID/results/20260809_233703_b_fsm_strong_repspeedsanity7200x
