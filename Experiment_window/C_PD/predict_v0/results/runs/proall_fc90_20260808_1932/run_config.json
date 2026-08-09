@@ -1,0 +1,41 @@
+{
+  "detector": "metop03",
+  "channels": "omni_p6,pro_tel0_p1,pro_tel0_p2,pro_tel0_p3,pro_tel0_p4,pro_tel0_p5,pro_tel0_p6,pro_tel90_p1,pro_tel90_p2,pro_tel90_p3,pro_tel90_p4,pro_tel90_p5,pro_tel90_p6",
+  "binary": true,
+  "forecast_min": 90,
+  "epochs": 100,
+  "patience": 15,
+  "folds": 5,
+  "exp_name": "proall_fc90_20260808_1932",
+  "seed": 0,
+  "out_dir": null,
+  "force": false,
+  "channels_parsed": [
+    "omni_p6",
+    "pro_tel0_p1",
+    "pro_tel0_p2",
+    "pro_tel0_p3",
+    "pro_tel0_p4",
+    "pro_tel0_p5",
+    "pro_tel0_p6",
+    "pro_tel90_p1",
+    "pro_tel90_p2",
+    "pro_tel90_p3",
+    "pro_tel90_p4",
+    "pro_tel90_p5",
+    "pro_tel90_p6"
+  ],
+  "n_classes": 2,
+  "label_names": [
+    "quiet",
+    "event"
+  ],
+  "window_len": 14,
+  "X_shape": [
+    78481,
+    13,
+    14
+  ],
+  "n_windows": 78481,
+  "n_episodes": 22
+}

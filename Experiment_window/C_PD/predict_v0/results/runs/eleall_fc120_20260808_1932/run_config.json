@@ -1,0 +1,35 @@
+{
+  "detector": "metop03",
+  "channels": "omni_p6,ele_tel0_e1,ele_tel0_e2,ele_tel0_e3,ele_tel90_e1,ele_tel90_e2,ele_tel90_e3",
+  "binary": true,
+  "forecast_min": 120,
+  "epochs": 100,
+  "patience": 15,
+  "folds": 5,
+  "exp_name": "eleall_fc120_20260808_1932",
+  "seed": 0,
+  "out_dir": null,
+  "force": false,
+  "channels_parsed": [
+    "omni_p6",
+    "ele_tel0_e1",
+    "ele_tel0_e2",
+    "ele_tel0_e3",
+    "ele_tel90_e1",
+    "ele_tel90_e2",
+    "ele_tel90_e3"
+  ],
+  "n_classes": 2,
+  "label_names": [
+    "quiet",
+    "event"
+  ],
+  "window_len": 14,
+  "X_shape": [
+    78465,
+    7,
+    14
+  ],
+  "n_windows": 78465,
+  "n_episodes": 22
+}

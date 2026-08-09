@@ -1,0 +1,30 @@
+{
+  "detector": "metop03",
+  "channels": "omni_p6,pro_tel90_p5",
+  "binary": true,
+  "forecast_min": 0,
+  "epochs": 100,
+  "patience": 15,
+  "folds": 5,
+  "exp_name": null,
+  "seed": 0,
+  "out_dir": null,
+  "force": false,
+  "channels_parsed": [
+    "omni_p6",
+    "pro_tel90_p5"
+  ],
+  "n_classes": 2,
+  "label_names": [
+    "quiet",
+    "event"
+  ],
+  "window_len": 14,
+  "X_shape": [
+    79099,
+    2,
+    14
+  ],
+  "n_windows": 79099,
+  "n_episodes": 22
+}

@@ -7,6 +7,7 @@ __pycache__/
 *_nc/
 *.nc
 *_cache.json
+checkpoints/
 
 # 안쓰는 폴더
 GOES/
