@@ -241,14 +241,41 @@ _MATCH_SCALAR_KEYS = ("n_cat", "n_det", "pod", "far", "n_hit", "n_fa", "n_fa_saa
 def match_cell(det: pd.DataFrame, cat: pd.DataFrame, tol_h: float = TOL_H) -> dict:
     """core.match_events()는 fa_maglat/onset_diff_h 등 배열값 진단 필드도 같이
     반환하는데(POES 지자기 위도 등 별도 진단용, sweep_table도 안 씀) 비교표에는
-    스칼라 요약 지표만 필요해서 여기서 골라낸다 -- match_events 자체는 무변경 재사용."""
+    스칼라 요약 지표만 필요해서 여기서 골라낸다 -- match_events 자체는 무변경 재사용.
+
+    예외적으로 onset_diff_h 만 분위수로 요약해 살린다 -- forecast(Δt) 모델은
+    카탈로그 onset보다 Δt만큼 먼저 발화해야 정상이라 onset_diff_h의 중앙값이
+    실제 리드타임 확보 여부를 직접 보여준다(배열 자체는 CSV 칸에 못 넣으니
+    median/p25/p75/n 넉 점으로 요약).
+
+    부호 규약(_match_core_poes.py:136, match_events() 안 `onset_diff.append(
+    (on[jc]-b)/np.timedelta64(1,"h"))`, on=검출 onset, b=카탈로그 begin_time으로
+    확인): onset_diff_h = 검출 onset - 카탈로그 onset. **음수 = 검출이 카탈로그보다
+    선행(리드타임 확보), 양수 = 검출이 후행.** 404행 plot_pod_far_scatter()의
+    "neg = POES leads" 축 라벨과 일치."""
     if len(det) == 0:
         return {"n_cat": len(cat), "pod": 0.0, "far": np.nan, "n_det": 0, "n_hit": 0,
                 "n_fa": 0, "n_fa_saa": np.nan, "n_events_total": 0, "n_events_tp": 0,
                 "n_events_fa": 0, "event_far": np.nan, "TP": 0, "FP": 0, "FN": len(cat),
-                "precision": np.nan, "recall": 0.0, "f1": np.nan}
+                "precision": np.nan, "recall": 0.0, "f1": np.nan,
+                "onset_diff_h_median": np.nan, "onset_diff_h_p25": np.nan,
+                "onset_diff_h_p75": np.nan, "onset_diff_h_n": 0}
     r = core.match_events(det, cat, tol_h)
-    return {k: r[k] for k in _MATCH_SCALAR_KEYS}
+    out = {k: r[k] for k in _MATCH_SCALAR_KEYS}
+
+    od = np.asarray(r.get("onset_diff_h", []), dtype=float)
+    od = od[np.isfinite(od)]
+    if len(od):
+        out["onset_diff_h_median"] = float(np.median(od))
+        out["onset_diff_h_p25"] = float(np.percentile(od, 25))
+        out["onset_diff_h_p75"] = float(np.percentile(od, 75))
+        out["onset_diff_h_n"] = int(len(od))
+    else:
+        out["onset_diff_h_median"] = np.nan
+        out["onset_diff_h_p25"] = np.nan
+        out["onset_diff_h_p75"] = np.nan
+        out["onset_diff_h_n"] = 0
+    return out
 
 
 # ── 임계 스윕 + 운용점 선택 ───────────────────────────────────────────────
@@ -262,7 +289,8 @@ def sweep_thresholds(prob: pd.Series, thresholds: list[float], catalogs: dict) -
             r = match_cell(det, cat)
             for k in ("pod", "far", "n_det", "n_hit", "n_fa", "event_far",
                      "precision", "recall", "f1", "n_events_total", "n_events_tp",
-                     "n_events_fa", "TP", "FP", "FN"):
+                     "n_events_fa", "TP", "FP", "FN",
+                     "onset_diff_h_median", "onset_diff_h_n"):
                 row[f"{cat_name}_{k}"] = r[k]
         rows.append(row)
     return pd.DataFrame(rows)
