@@ -18,13 +18,15 @@
 
 ## 배속
 - warm-up/active 배속 조합: ['(0.0, 0.0)', '(7200.0, 7200.0)']
-- speed_sanity(1800x vs 7200x): speed_sanity.csv 없음(아직 실행 안 됨)
+- speed_sanity(1800x vs 7200x): ..\..\..\results\260809_2225\speed_sanity.csv: PASS (행별 rel_diff: [{'metric': 'M1', 'rel_diff': 0.0546032357473035, 'pass': True}, {'metric': 'M2', 'rel_diff': 0.0557142857142857, 'pass': True}, {'metric': 'M3', 'rel_diff': 0.0694444444444443, 'pass': True}, {'metric': 'M5', 'rel_diff': 0.1065830721003135, 'pass': True}])
 
 ## warm-up 제외
 - 배경 워밍업 제외 틱 수(run_meta 실측값, run별): [96]
 - 기준: bg_median/bg_std 가 전 채널에서 처음 유효해지는 시각 이전 전부 (wp_poes_node.py 실측, 휴리스틱 아님)
 
 ## 반복 수
+- 시나리오 a: n_runs=3, n_ticks_active=0, n_activations=0
+- 시나리오 a': n_runs=3, n_ticks_active=0, n_activations=0
 - 시나리오 b: n_runs=6, n_ticks_active=9222, n_activations=0
 - 시나리오 c1ch: n_runs=6, n_ticks_active=9214, n_activations=6
 - 시나리오 d3ch: n_runs=3, n_ticks_active=4611, n_activations=148

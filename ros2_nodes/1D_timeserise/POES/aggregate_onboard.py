@@ -76,6 +76,10 @@ def find_runs(results_root: Path) -> tuple[list[dict], list[str]]:
         except Exception as e:
             warnings.append(f"{rdir.name}: run_meta.json 파싱 실패({e}) -- 집계에서 제외")
             continue
+        if canonical_scenario(meta) is None:
+            warnings.append(f"{rdir.name}: scenario={meta.get('scenario')!r} 이 SCENARIO_LABELS"
+                            f"(a~e)에 없음 -- 집계에서 제외(다른 실험이 섞였을 가능성)")
+            continue
         runs.append({"rdir": rdir, "meta": meta})
     return runs, warnings
 
@@ -85,7 +89,11 @@ def is_speedsanity(meta: dict) -> bool:
 
 
 def is_nolog(meta: dict) -> bool:
-    return "nolog" in str(meta.get("rep", "")) or meta.get("instrumented") is False
+    """rep 값에 "nolog" 가 들어간 run(--no-log 계측 오버헤드 A/B용)만 판정한다.
+    instrumented:false 는 nolog 뿐 아니라 idle(a_idle/a_prime_idle_ros, 리플레이 자체가
+    없어 계측할 대상이 없음)에도 쓰이는 값이라 이걸로 판정하면 idle 이 main_runs 에서
+    잘못 제외돼 power baseline(p_a/p_aprime)이 못 채워진다 -- rep 이름만으로 한정."""
+    return "nolog" in str(meta.get("rep", ""))
 
 
 def canonical_scenario(meta: dict) -> str | None:
@@ -434,7 +442,8 @@ def build_rep_variance(runs: list[dict]) -> pd.DataFrame:
 # 표 4 -- measurement_note.md
 # ══════════════════════════════════════════════════════
 def build_measurement_note(runs: list[dict], bench: dict | None, warnings: list[str],
-                           table1: pd.DataFrame, rep_var: pd.DataFrame) -> str:
+                           table1: pd.DataFrame, rep_var: pd.DataFrame,
+                           results_root: Path | None = None) -> str:
     lines = []
     lines.append("# 측정 조건 노트 (논문 4.3절 인용용)\n")
     lines.append("**경고: 전력·CPU 는 가속 리플레이 값이며 비행 조건이 아니다. "
@@ -470,13 +479,19 @@ def build_measurement_note(runs: list[dict], bench: dict | None, warnings: list[
              if not is_speedsanity(r["meta"])}
     lines.append(f"- warm-up/active 배속 조합: {sorted(str(s) for s in speeds)}")
     ss_note = "speed_sanity.csv 없음(아직 실행 안 됨)"
-    for r in runs:
-        p = r["rdir"] / "speed_sanity.csv"
+    # _speed_sanity_compare.py 는 두 run(1800x/7200x)의 공통 부모, 즉 results_root 바로
+    # 아래에 speed_sanity.csv 를 쓴다(rdir_7200.parent -- 개별 run 폴더 안이 아니다).
+    # 개별 run 폴더 안에서 찾던 예전 방식은 구조상 절대 못 찾는다.
+    ss_candidates = []
+    if results_root is not None:
+        ss_candidates.append(results_root / "speed_sanity.csv")
+    ss_candidates.extend(r["rdir"] / "speed_sanity.csv" for r in runs)   # 이전 배치 산출물 호환
+    for p in ss_candidates:
         if p.exists():
             try:
                 ss = pd.read_csv(p)
                 all_pass = bool(ss["pass"].all()) if "pass" in ss.columns else None
-                ss_note = f"{p.parent.name}/speed_sanity.csv: {'PASS' if all_pass else 'FAIL'} " \
+                ss_note = f"{p}: {'PASS' if all_pass else 'FAIL'} " \
                          f"(행별 rel_diff: {ss[['metric','rel_diff','pass']].to_dict('records') if len(ss) else []})"
             except Exception as e:
                 ss_note = f"speed_sanity.csv 파싱 실패: {e}"
@@ -578,7 +593,7 @@ def run(results_root: Path) -> dict:
     table2 = build_table2(table1, bench)
     table3 = build_table3(table1, bench)
     rep_var = build_rep_variance(runs)
-    note = build_measurement_note(runs, bench, warnings, table1, rep_var)
+    note = build_measurement_note(runs, bench, warnings, table1, rep_var, results_root)
 
     return {"table1": table1, "table2": table2, "table3": table3, "note": note,
            "warnings": warnings, "rep_variance": rep_var}
@@ -609,14 +624,18 @@ def write_outputs(results_root: Path, result: dict) -> None:
 
 def _parse_args(argv=None):
     p = argparse.ArgumentParser(description="aggregate_onboard -- S5/S6 산출물 집계, 새 측정 없음")
-    p.add_argument("results_root", nargs="?", default=None)
+    p.add_argument("--results-root", type=str, default=None,
+                   help="집계 대상 results 디렉토리(그 아래 한 겹이 run 폴더들). "
+                        "예: results/260809_2225. 기본: 레포 루트/results")
     return p.parse_args(argv)
 
 
 def main(argv=None):
     args = _parse_args(argv)
     results_root = Path(args.results_root) if args.results_root else (
-        Path(__file__).resolve().parents[2] / "results")
+        # parents[3] = 레포 루트(POES -> 1D_timeserise -> ros2_nodes -> 레포 루트),
+        # _run_common.sh 의 RESULTS_ROOT="$REPO/results" 와 동일 위치로 맞춘다.
+        Path(__file__).resolve().parents[3] / "results")
     print(f"[aggregate] results_root={results_root}")
     result = run(results_root)
     if result["table1"].empty and not result["warnings"]:

@@ -13,7 +13,10 @@ set -uo pipefail   # 개별 run_one() 안 실패로 전체 스위트가 죽지 �
 REPO="${REPO:-$HOME/jeongin/Pixhawk_ReID}"
 NODE_DIR="${NODE_DIR:-$REPO/ros2_nodes/1D_timeserise/POES}"
 DATA="${DATA:-$REPO/Experiment_window/C_PD/POES/MetOp03_count/poes_metop03_cache_parquet}"
-CKPT_ROOT="${CKPT_ROOT:-$REPO/Experiment_window/C_PD/predict_v0/runs}"
+# predict_v0/output/ 이 predict_v0/results/ 로 정착(리네임)됨 -- runs/ 는 그 아래.
+CKPT_ROOT="${CKPT_ROOT:-$REPO/Experiment_window/C_PD/predict_v0/results/runs}"
+export CKPT_ROOT   # run_idle_resource.sh 처럼 --ckpt-root 를 명시 전달 안 하는 호출도
+                    # ai_tcn_node.py 의 env-var 우선 기본값으로 이 값을 자동 상속하게(REPO/RESULT_DIR 관례 승계)
 RESULTS_ROOT="${RESULTS_ROOT:-$REPO/results}"
 EVENT_WINDOWS_JSON="${EVENT_WINDOWS_JSON:-$NODE_DIR/event_windows.json}"
 

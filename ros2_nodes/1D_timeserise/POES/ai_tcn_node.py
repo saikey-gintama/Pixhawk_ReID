@@ -92,7 +92,7 @@ RESULT_DIR = os.environ.get("RESULT_DIR", ".")
 # ══════════════════════════════════════════════════════
 CHANNELS      = "omni_p6"
 WINDOW        = 14
-CKPT_ROOT     = C_PD / "predict_v0" / "runs"
+CKPT_ROOT     = Path(os.environ.get("CKPT_ROOT", str(C_PD / "predict_v0" / "results" / "runs")))
 RUN_NAME      = "omni_p6_binary"
 FOLDS_MODE    = "single"      # {single, ensemble}
 FOLD          = 0

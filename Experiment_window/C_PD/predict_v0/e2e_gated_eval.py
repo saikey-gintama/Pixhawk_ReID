@@ -39,11 +39,11 @@ C/D 재정의 이유(범주 오류 수정): ALERT(alert_n=4)는 이 논문에서
       검출이 B/C에도 살아남았는가"를 판정하는 자기매칭에도 그대로 재사용(cat 인자 자리에
       B/C의 det를 onset_time 인덱스로 바꿔 넣을 뿐, 매칭 로직 자체는 무변경).
 
-경로: --ckpt-root(기본 predict_v0/output/runs) 아래 --run-name(기본
+경로: --ckpt-root(기본 predict_v0/results/runs) 아래 --run-name(기본
 omni_p6_pro_tel0_p5_pro_tel90_p5_binary) 서브디렉토리의 체크포인트를 쓰고,
---out-dir(기본 predict_v0/output/e2e) 에 결과를 쓴다. 손라벨 카탈로그(quality_check/)는
-predict_v0/output/quality_check/ 를 그대로 읽는다(4_validation.py 의 load_manual_catalog
-자체는 무변경 -- 호출 구간에서만 v4.HERE 를 잠깐 output/ 으로 바꿔치기했다가 되돌린다).
+--out-dir(기본 predict_v0/results/e2e) 에 결과를 쓴다. 손라벨 카탈로그(quality_check/)는
+predict_v0/results/quality_check/ 를 그대로 읽는다(4_validation.py 의 load_manual_catalog
+자체는 무변경 -- 호출 구간에서만 v4.HERE 를 잠깐 results/ 로 바꿔치기했다가 되돌린다).
 
 게이트 닫힌 틱 처리 (B만 해당): "추론 없음"이지 "임계 미만"이 아니다. 두 방식 모두 낸다.
   break : 조건 계산에서 False로 취급 -- 진행 중이던 세그먼트를 끊는다.
@@ -93,7 +93,7 @@ TOL_H = v4.TOL_H                       # 24h, core.MATCH_TOL_H -- 카탈로그 �
 # 운용점) -- A 대조(필수 관문 ①)에 그대로 쓰기 위해 포함.
 THRESHOLDS = [0.85, 0.90, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99, 0.995, 0.999]
 
-# comparison_table.csv(output/validation_v0/validation_ch_20260808_1704) 의 TCN multi 행 --
+# comparison_table.csv(results/validation_v0/validation_ch_20260808_1704) 의 TCN multi 행 --
 # 필수 관문 ①.
 BASELINE_A = {
     ("noaa", 0.99): dict(n_det=217, TP=40, FP=10, FN=2, pod=0.9523809523809523,
@@ -107,9 +107,9 @@ BASELINE_A = {
 PAPER_4_6_ALERT = dict(catalog="noaa", n_det=216, pod=0.738, event_far=0.061)
 
 # 모듈 전역(argparse 로 main() 에서 덮어씀 -- ap_fsm_node.py 의 관례 승계)
-CKPT_ROOT = HERE / "output" / "runs"
+CKPT_ROOT = HERE / "results" / "runs"
 RUN_NAME = DEFAULT_RUN_NAME
-OUT_DIR = HERE / "output" / "e2e"
+OUT_DIR = HERE / "results" / "e2e"
 
 
 # ══════════════════════════════════════════════════════
@@ -194,7 +194,7 @@ def load_catalogs() -> dict[str, pd.DataFrame]:
     noaa = v4.load_noaa_catalog()
     orig_here = v4.HERE
     try:
-        v4.HERE = HERE / "output"   # quality_check/ 가 output/ 아래로 이동됨(경로만 보정)
+        v4.HERE = HERE / "results"   # quality_check/ 가 results/ 아래로 이동됨(경로만 보정)
         manual = v4.load_manual_catalog()
     finally:
         v4.HERE = orig_here
@@ -460,14 +460,14 @@ def write_summary_md(common_index, gate_a_lines, gate_d_lines, removed_lines):
 def parse_args(argv=None):
     p = argparse.ArgumentParser(
         description="e2e_gated_eval -- 게이팅된 파이프라인 end-to-end 검출 성능 (오프라인)")
-    p.add_argument("--ckpt-root", type=Path, default=HERE / "output" / "runs",
+    p.add_argument("--ckpt-root", type=Path, default=HERE / "results" / "runs",
                    help="TCN 체크포인트 루트(아래 --run-name/checkpoints/manifest.json). "
-                        "기본: predict_v0/output/runs")
+                        "기본: predict_v0/results/runs")
     p.add_argument("--run-name", type=str, default=DEFAULT_RUN_NAME,
                    help="ckpt-root 아래 TCN run 디렉토리 이름(3채널 승자 binary 체크포인트)")
-    p.add_argument("--out-dir", type=Path, default=HERE / "output" / "e2e",
+    p.add_argument("--out-dir", type=Path, default=HERE / "results" / "e2e",
                    help="e2e_gated.csv/e2e_removed.csv/e2e_summary.md 출력 디렉토리. "
-                        "기본: predict_v0/output/e2e")
+                        "기본: predict_v0/results/e2e")
     return p.parse_args(argv)
 
 

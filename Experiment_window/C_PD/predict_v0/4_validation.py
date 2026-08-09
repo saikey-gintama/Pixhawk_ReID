@@ -118,7 +118,7 @@ def load_noaa_catalog() -> pd.DataFrame:
 def load_manual_catalog() -> pd.DataFrame:
     """quality_check/events_reconciled.csv(손라벨, 재구현 없이 그대로) -> match_events가
     기대하는 형태(index=onset_time, max_time/max_pfu 컬럼)로 변환."""
-    events = pd.read_csv(HERE / "quality_check" / "events_reconciled.csv",
+    events = pd.read_csv(HERE / "results" / "quality_check" / "events_reconciled.csv",
                         parse_dates=["onset_time", "peak_time", "end_time"])
     events = events.dropna(subset=["onset_time", "peak_time"]).set_index("onset_time")
     events["max_time"] = events["peak_time"]
@@ -400,7 +400,7 @@ def evaluate_channel_config(config_name: str, channels: list[str], tcn_run: str 
     tcn_result = None
     sweep_df = None
     if tcn_run is not None:
-        loaded = load_tcn_ensemble(HERE / "runs" / tcn_run)
+        loaded = load_tcn_ensemble(HERE / "results" / "runs" / tcn_run)
         if loaded is not None:
             models, manifest = loaded
             window = manifest["window"]
@@ -451,7 +451,7 @@ def main():
     ap.add_argument("--out-dir", default=None)
     args = ap.parse_args()
 
-    out_dir = Path(args.out_dir) if args.out_dir else HERE / "validation_v0"
+    out_dir = Path(args.out_dir) if args.out_dir else HERE / "results" / "validation_v0"
     events_dir = out_dir / "event_overlay"
     events_dir.mkdir(parents=True, exist_ok=True)
 
@@ -491,7 +491,7 @@ def main():
     # -- 대표 이벤트 오버레이 3장 (single 채널 TCN 결과가 있으면 그걸로, 없으면 FSM만) --
     single_tcn = tcn_results.get("single", {})
     windows_meta = te.load_windows(args.detector, [args.single_channels.split(",")[0]])
-    events = pd.read_csv(HERE / "quality_check" / "events_reconciled.csv",
+    events = pd.read_csv(HERE / "results" / "quality_check" / "events_reconciled.csv",
                         parse_dates=["onset_time", "peak_time", "end_time"])
     events = events.dropna(subset=["onset_time", "peak_time", "end_time"])
     reps = diag.pick_representatives(events, windows_meta)

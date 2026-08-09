@@ -542,7 +542,9 @@ def main(argv=None):
 
     out_dir = Path(args.out_dir) if args.out_dir else (
         Path(RESULT_DIR) if RESULT_DIR else
-        Path(__file__).resolve().parents[2] / "results" / f"bench_micro_{time.strftime('%Y%m%d_%H%M%S')}")
+        # parents[3] = 레포 루트(POES -> 1D_timeserise -> ros2_nodes -> 레포 루트),
+        # _run_common.sh 의 RESULTS_ROOT="$REPO/results" 와 동일 위치로 맞춘다.
+        Path(__file__).resolve().parents[3] / "results" / f"bench_micro_{time.strftime('%Y%m%d_%H%M%S')}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     torch.set_num_threads(1)
