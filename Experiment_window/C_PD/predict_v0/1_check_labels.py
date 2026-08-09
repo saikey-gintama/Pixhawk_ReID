@@ -249,7 +249,30 @@ def report_catalog_comparison(events: pd.DataFrame, tol_h: float = MATCH_TOL_H) 
     outside = manual[~hit]
     print(f"\n손라벨 {len(manual)}개 중 카탈로그 매칭: {n_in}개, 카탈로그 밖(신규 발견): {len(outside)}개")
     print(outside[["event_id", "onset_time", "peak_count"]].to_string(index=False))
-    return {"cat": cat, "outside": outside}
+
+    # ── 역방향(NOAA -> 손라벨): det_matched_mask(det,cat,tol)을 그대로 재사용해
+    # "카탈로그의 각 항목이 손라벨에 매칭되는가"를 구한다. 단순히 두 변수 자리만
+    # 바꾸면 안 된다 -- det_matched_mask는 det["onset_time"](컬럼)과 cat.index
+    # (DatetimeIndex)를 요구하는데(_match_core_poes.py:65-77 확인), cat은 컬럼이
+    # 없고 manual은 인덱스가 없어서 각각 그 모양으로 재구성해야 한다
+    # (report_fsm_comparison()의 기존 역방향 호출과 동일 패턴). 두 방향 카운트가
+    # 서로 안 맞을 수 있다(손라벨 하나가 카탈로그 두 건을 덮는 등) -- 실제 매칭
+    # 구조이므로 맞추려 하지 않는다.
+    if manual["onset_time"].dt.tz is None:
+        raise SystemExit("[check] manual onset_time이 tz-naive -- S0.5 tz 유실 전례와 동일 위험. 매칭 전 중단.")
+    cat_as_det = pd.DataFrame({"onset_time": cat.index})
+    manual_as_cat = manual.set_index("onset_time")
+    rev_hit = core.det_matched_mask(cat_as_det, manual_as_cat, tol_h)
+    cat_matched_n = int(rev_hit.sum())
+    cat_unmatched = cat[~rev_hit]
+    cat_unmatched_n = len(cat_unmatched)
+    print(f"\nNOAA {len(cat)}개 중 손라벨 매칭: {cat_matched_n}개, 손라벨에 없음: {cat_unmatched_n}개")
+    print(f"손라벨에 없는 카탈로그 이벤트 begin_time: {cat_unmatched.index.tolist()}")
+
+    return {"cat": cat, "outside": outside,
+           "cat_matched_n": cat_matched_n, "cat_unmatched_n": cat_unmatched_n,
+           "cat_unmatched": cat_unmatched,
+           "manual_matched_n": n_in, "manual_unmatched_n": len(outside)}
 
 
 def main():
@@ -285,6 +308,20 @@ def main():
     fsm_res["missed"].to_csv(out_dir / "fsm_missed_manual.csv", index=False)
     fsm_res["fsm_only"].to_csv(out_dir / "fsm_only_no_manual.csv", index=False)
     cat_res["outside"].to_csv(out_dir / "manual_outside_catalog.csv", index=False)
+
+    # ── 신규: 논문 Table 2 용 양방향 포함관계 요약 ──
+    n_manual = cat_res["manual_matched_n"] + cat_res["manual_unmatched_n"]
+    n_noaa = len(cat_res["cat"])
+    summary = pd.DataFrame([{
+        "tol_h": MATCH_TOL_H, "n_noaa": n_noaa, "n_manual": n_manual,
+        "n_manual_in_catalog": cat_res["manual_matched_n"],
+        "n_manual_outside": cat_res["manual_unmatched_n"],
+        "n_noaa_in_manual": cat_res["cat_matched_n"],
+        "n_noaa_outside": cat_res["cat_unmatched_n"],
+    }])
+    summary.to_csv(out_dir / "catalog_overlap_summary.csv", index=False)
+    cat_res["cat_unmatched"].reset_index().to_csv(out_dir / "noaa_outside_manual.csv", index=False)
+
     print(f"\n[check] 리포트 CSV 저장 -> {out_dir}")
 
 
