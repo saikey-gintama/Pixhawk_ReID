@@ -5,16 +5,35 @@ sc_offboard_node.py  --  cFS SC(RTS 층), POES 온보드 파이프라인 S4
 KSEM/sc_offboard_node.py 승계: PX4 헬퍼, PASSIVE dry-run, 10Hz 제어루프,
 offboard_setpoint_counter>=10 선행 스트림 규약을 그대로 유지한다.
 
-상태 매핑(md 6절 S4, KSEM 과 동일):
+상태 매핑(md 6절 S4 기반, 재발사 가드/DISARM 도입으로 KSEM 원본에서 갱신됨):
   ap_state PRE_ALERT -> pre_streaming=True. setpoint pre-streaming 시작.
       **상태 전이는 없다**(가역 구간) -- PX4 는 Offboard 전환 직전 선행 스트림이
       2Hz 이상 흐르고 있어야 전환을 거부하지 않는다(우주과학회 실증 교훈). 이것이
       2단계 경보(PRE_ALERT/ALERT)의 운용상 근거다: PRE_ALERT 에서 미리 흘려두지
       않으면 ALERT 순간 Offboard 전환 자체가 거부될 수 있다.
-  ap_state ALERT     -> IDLE -> TRACKING. setpoint 가 충분히(counter>=10) 쌓였을
-      때만 실제 Offboard 전환 + ARM(KSEM 규약 그대로, 재구현 아님).
-  ap_state NOMINAL   -> TRACKING -> HOLD. pre_streaming=False.
+  ap_state ALERT     -> IDLE 또는 HOLD -> TRACKING. setpoint 가 충분히(counter>=10)
+      쌓였을 때 에피소드당 **정확히 1회만** Offboard 전환 + ARM(재발사 가드,
+      command_sent_this_episode). HOLD 중에도 ALERT 가 재도착하면 TRACKING 으로
+      복귀해 재ARM 한다(D2, 클러스터 이벤트 대응 -- offboard_setpoint_counter 는
+      리셋하지 않는다. HOLD 동안에도 control_loop 가 setpoint 를 끊김 없이
+      계속 발행하므로 PX4 의 2Hz 선행 스트림 요건은 이미 충족된 상태다).
+      실측 확인(전 구간 causal 리플레이): 재ALERT 는 AP 지속성 카운터가 NOMINAL 에서
+      0 으로 완전히 리셋된 뒤 새 연속 4틱(3600/S초, S=배속)이 필요해 HOLD_TIMEOUT
+      (배속 무관 실 벽시계 6초)보다 항상 늦게 온다(S<600) -- 이 경로는 실 데이터
+      리플레이로는 도달하지 않고 코드/단위테스트로만 방어적으로 검증된다.
+  ap_state NOMINAL   -> TRACKING -> HOLD, pre_streaming=False. 이 에피소드에서
+      실제로 ARM 했었다면(command_sent_this_episode) DISARM 도 이 순간(ALERT_CLEARED
+      직후) 함께 발행한다 -- HOLD_TIMEOUT 까지 기다리지 않는다(D1, 불필요한 ARM
+      상태 유지 시간을 최소화).
   HOLD 는 HOLD_DURATION_SEC*2 경과 후 IDLE 로 자동 복귀(KSEM 그대로).
+  재ARM 채터링 가드: 마지막 DISARM 후 MIN_REARM_INTERVAL_SEC(기본 1.0초) 이내에는
+      재ARM 하지 않는다(D4). 이 값은 합법적 재ALERT 소요시간(최소 수 초, 위 참고)
+      보다 훨씬 짧아 정상 재개는 막지 않고, 글리치/중복메시지 수준의 즉시 재발사만
+      억제한다.
+
+  **경고(D3, LAND 미구현)**: 착륙 시퀀스 없이 고도 1.5m 호버 셋포인트에서 그대로
+  DISARM 한다. 프로펠러 장착 상태에서 --active 실행 금지 -- 자유낙하한다.
+  VEHICLE_CMD_NAV_LAND(21) 도입은 별도 작업.
 
 판정 로직(ScFsmCore)은 Node 클래스 밖 -- rclpy/px4_msgs 없이 import 가능(md 2절).
 
@@ -86,6 +105,9 @@ AI_GATE_MODE      = "off"   # {off, shadow, gate}
 AI_THRESHOLD      = 0.5
 HOLD_DURATION_SEC_BASE = 3.0   # KSEM 원값(초, 실시간/1배속 기준)
 HOLD_SCALE        = 1.0        # 가속 리플레이용 축소 배수. 1.0=KSEM 그대로.
+MIN_REARM_INTERVAL_SEC = 1.0   # D4=(a): 마지막 DISARM 후 이 시간(실 벽시계) 이내 재ARM 금지
+                                 # (채터링 가드). 근거는 모듈 docstring 참고 -- 합법적 재ALERT
+                                 # 소요시간(수 초 이상)보다 훨씬 짧아 정상 재개는 막지 않는다.
 
 # 상태 정의 (KSEM 과 동일)
 STATE_IDLE, STATE_TRACKING, STATE_HOLD = "IDLE", "TRACKING", "HOLD"
@@ -101,11 +123,13 @@ class ScFsmCore:
     보고 실행만 한다) -- 그래야 rclpy/px4_msgs 없이도 PASSIVE_SUPPRESS 를 검증할 수 있다."""
 
     def __init__(self, ai_gate_mode: str = AI_GATE_MODE, ai_threshold: float = AI_THRESHOLD,
-                hold_duration_sec: float = HOLD_DURATION_SEC_BASE, passive: bool = PASSIVE):
+                hold_duration_sec: float = HOLD_DURATION_SEC_BASE, passive: bool = PASSIVE,
+                min_rearm_interval_sec: float = MIN_REARM_INTERVAL_SEC):
         self.ai_gate_mode = ai_gate_mode
         self.ai_threshold = ai_threshold
         self.hold_duration_sec = hold_duration_sec
         self.passive = passive
+        self.min_rearm_interval_sec = min_rearm_interval_sec
 
         self.state = STATE_IDLE
         self.pre_streaming = False
@@ -114,6 +138,10 @@ class ScFsmCore:
         self.last_action_ms = float("nan")
         self.last_t_sample_rx: float | None = None
         self.last_p_event: float | None = None
+
+        # 재발사 가드(2-1) + DISARM(2-2) 상태
+        self.command_sent_this_episode = False   # 이 TRACKING 에피소드에서 OFFBOARD+ARM 을 이미 냈는가
+        self.last_disarm_time: float | None = None   # D4 재ARM 채터링 가드용
 
         self.commands_sent: list[str] = []         # ACTIVE 로 실제 "발행"된 명령(시뮬레이션 기록)
         self.commands_suppressed: list[str] = []   # PASSIVE 로 억제된 명령
@@ -145,10 +173,17 @@ class ScFsmCore:
             allowed = True
             if self.ai_gate_mode == "gate":
                 allowed = (self.last_p_event is not None and self.last_p_event >= self.ai_threshold)
-            if self.state == STATE_IDLE:
+            # D2=(b): HOLD 중에도 ALERT 재도착 시 TRACKING 복귀(클러스터 이벤트 대응).
+            # IDLE 과 HOLD 둘 다 허용 -- TRACKING 자체(이미 추적 중)는 재진입 대상이 아니다.
+            if self.state in (STATE_IDLE, STATE_HOLD):
                 if allowed:
                     self.state = STATE_TRACKING
                     events.append("ALERT_TRIGGER")
+                    # 새 에피소드 시작 -- 재발사 가드 리셋(counter 는 건드리지 않는다.
+                    # HOLD 동안에도 setpoint 스트리밍이 안 끊겼으므로 PX4 의 2Hz 선행
+                    # 스트림 요건은 이미 충족돼 있다 -- 0 으로 되돌리면 불필요하게
+                    # 1초를 더 기다리게 만들 뿐이다).
+                    self.command_sent_this_episode = False
                 else:
                     events.append("ALERT_GATED_SUPPRESS")   # gate 모드 전용 이벤트
 
@@ -157,6 +192,17 @@ class ScFsmCore:
             if self.state == STATE_TRACKING:
                 self.state = STATE_HOLD
                 events.append("ALERT_CLEARED")
+                # D1=(a): HOLD_TIMEOUT 까지 기다리지 않고 이 순간 DISARM(불필요한 ARM
+                # 유지시간 최소화). 이 에피소드에서 실제로 ARM 했을 때만(가드에 막혀
+                # 한 번도 못 냈으면 DISARM 할 것도 없다) 발행 + 중복 방지.
+                if self.command_sent_this_episode:
+                    if self.passive:
+                        self.commands_suppressed.append("DISARM_CMD")
+                    else:
+                        self.commands_sent.append("DISARM_CMD")
+                    events.append("DISARM_CMD")
+                    self.last_disarm_time = now
+                self.command_sent_this_episode = False
 
         return events
 
@@ -167,8 +213,10 @@ class ScFsmCore:
         self.last_p_event = p_event
 
     def tick_control(self, now: float) -> list[str]:
-        """10Hz 제어루프 1회(KSEM 구조 그대로: TRACKING 이고 counter>=10 이면 매 틱
-        Offboard+ARM 명령을 다시 낸다 -- 원본에 재발사 방지 가드가 없어 그대로 승계).
+        """10Hz 제어루프 1회. TRACKING 이고 counter>=10 이면 **에피소드당 1회만**
+        Offboard+ARM 명령을 낸다(command_sent_this_episode 가드, 2-1 -- KSEM 원본은
+        재발사 방지 가드가 없어 매 틱 재발사했으나 이제 막는다). 재ARM 은 추가로
+        D4 채터링 가드(min_rearm_interval_sec)도 통과해야 한다.
         반환: 이번 틱 발생 이벤트."""
         events: list[str] = []
         if self.state == STATE_IDLE:
@@ -178,14 +226,20 @@ class ScFsmCore:
                 self.offboard_setpoint_counter = 0
 
         elif self.state == STATE_TRACKING:
-            if self.offboard_setpoint_counter >= 10:
-                for name, cmd_id in (("OFFBOARD_MODE_CMD", CMD_DO_SET_MODE),
-                                     ("ARM_CMD", CMD_COMPONENT_ARM_DISARM)):
-                    if self.passive:
-                        self.commands_suppressed.append(name)
-                    else:
-                        self.commands_sent.append(name)
-                    events.append(name)
+            if self.offboard_setpoint_counter >= 10 and not self.command_sent_this_episode:
+                guard_ok = (self.last_disarm_time is None
+                           or (now - self.last_disarm_time) >= self.min_rearm_interval_sec)
+                if guard_ok:
+                    for name, cmd_id in (("OFFBOARD_MODE_CMD", CMD_DO_SET_MODE),
+                                         ("ARM_CMD", CMD_COMPONENT_ARM_DISARM)):
+                        if self.passive:
+                            self.commands_suppressed.append(name)
+                        else:
+                            self.commands_sent.append(name)
+                        events.append(name)
+                    self.command_sent_this_episode = True
+                else:
+                    events.append("ARM_REARM_GUARD_SUPPRESS")   # D4 -- 관측용(명령 미발행)
             self.offboard_setpoint_counter += 1
 
         elif self.state == STATE_HOLD:
@@ -193,6 +247,7 @@ class ScFsmCore:
                 self.state = STATE_IDLE
                 self.offboard_setpoint_counter = 0
                 self.pre_streaming = False
+                self.command_sent_this_episode = False   # 에피소드 종료 시점 명시(이미 False 인 게 정상)
                 events.append("HOLD_TIMEOUT")
 
         return events
@@ -229,7 +284,8 @@ class ScOffboardNode(Node):
         self.setpoint_pub = self.create_publisher(TrajectorySetpoint, "/fmu/in/trajectory_setpoint", px4_qos)
 
         self.core = ScFsmCore(AI_GATE_MODE, AI_THRESHOLD,
-                              HOLD_DURATION_SEC_BASE * HOLD_SCALE, PASSIVE)
+                              HOLD_DURATION_SEC_BASE * HOLD_SCALE, PASSIVE,
+                              MIN_REARM_INTERVAL_SEC)
         self.nav_state = 0
         self.arming_state = 0
 
@@ -240,6 +296,8 @@ class ScOffboardNode(Node):
         self.writer.writerow([
             "timestamp", "event", "state", "ap_state", "nav_state",
             "action_ms", "e2e_ms", "passive", "ai_gate_mode",
+            "arming_state",   # 끝에 추가(Q5 확인: aggregate_onboard.py 는 열 이름으로 읽음,
+                              # 진단용 -- ARM/DISARM 판정에는 쓰지 않는다(core 는 rclpy 모름)
         ])
         self.get_logger().info(f"[SC] Logging to {log_path}")
         self.get_logger().info(
@@ -261,7 +319,10 @@ class ScOffboardNode(Node):
         now = time.time()
         events = self.core.on_alert(ap_state, now, alert.get("fsm_pub_ts"), alert.get("t_sample_rx"))
         for ev in events:
-            self._log_event(ev, ap_state)
+            if ev == "DISARM_CMD":
+                self._disarm()   # 내부에서 _log_event 도 함께 처리(_arm() 과 동일 패턴)
+            else:
+                self._log_event(ev, ap_state)
 
     def on_verdict(self, msg):
         try:
@@ -289,6 +350,9 @@ class ScOffboardNode(Node):
             elif ev == "HOLD_TIMEOUT":
                 self.get_logger().info("[SC] Hold timeout. HOLD -> IDLE")
                 self._log_event("HOLD_TIMEOUT", AP_NOMINAL)
+            elif ev == "ARM_REARM_GUARD_SUPPRESS":
+                # D4 -- 명령 미발행, 관측용 로그만(채터링 가드가 실제로 얼마나 발동하는지 확인용)
+                self._log_event("ARM_REARM_GUARD_SUPPRESS", AP_ALERT)
 
     # ── PX4 퍼블리시 헬퍼 (KSEM 과 동일, 변경 없음) ──
     def _publish_offboard_control_mode(self):
@@ -302,6 +366,9 @@ class ScOffboardNode(Node):
         self.offboard_mode_pub.publish(msg)
 
     def _publish_hover_setpoint(self):
+        # TODO(D3=(a), 별도 작업): 착륙 시퀀스 없이 이 고도(1.5m) 그대로 DISARM 한다
+        # (_disarm() 참고). 프로펠러 장착 상태에서 --active 실행 금지 -- 자유낙하한다.
+        # VEHICLE_CMD_NAV_LAND(21) 도입 전까지는 벤치/프로펠러-미장착 검증만 할 것.
         msg = TrajectorySetpoint()
         msg.timestamp = self._now_us()
         msg.position = [0.0, 0.0, -1.5]
@@ -327,6 +394,16 @@ class ScOffboardNode(Node):
             self.get_logger().info("[SC] ARM command sent")
         self._log_event("ARM_CMD" if not self.core.passive else "PASSIVE_SUPPRESS_CMD_ARM",
                         AP_ALERT, e2e_ms)
+
+    def _disarm(self):
+        # TODO(D3=(a), 별도 작업): 착륙 시퀀스 없이 DISARM 한다 -- _publish_hover_setpoint()
+        # TODO 참고. 프로펠러 장착 상태에서 --active 실행 금지 -- 자유낙하한다.
+        e2e_ms = self._compute_e2e_ms()
+        self._publish_vehicle_command(CMD_COMPONENT_ARM_DISARM, param1=0.0)
+        if not self.core.passive:
+            self.get_logger().info("[SC] DISARM command sent")
+        self._log_event("DISARM_CMD" if not self.core.passive else "PASSIVE_SUPPRESS_CMD_DISARM",
+                        AP_NOMINAL, e2e_ms)
 
     def _publish_vehicle_command(self, command, param1=0.0, param2=0.0):
         # PASSIVE(dry-run): 실제 명령 미발행. cFS LC PASSIVE = RTS 미발사.
@@ -356,6 +433,7 @@ class ScOffboardNode(Node):
             round(am, 3) if am == am else "",
             round(e2e_ms, 3) if (e2e_ms is not None and e2e_ms == e2e_ms) else "",
             int(self.core.passive), self.core.ai_gate_mode,
+            self.arming_state,   # 진단용(on_status() 수신값 그대로) -- 판정에는 안 씀
         ])
         self.csv.flush()
 

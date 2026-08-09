@@ -13,6 +13,15 @@ S4 로직 단위 검증 (Windows, rclpy/px4_msgs 없이). 읽기 전용, C_PD �
      만 기록되는지.
   6. 전 구간 리플레이(off 모드): IDLE->TRACKING 전이 횟수가 AP 의 ALERT 전이 216회와 일치하는지.
   7. t_sample_rx 가 WP->AP->AI->SC 를 거치며(JSON 직렬화 3회 포함) 변조되지 않는지.
+
+재발사 가드 + DISARM 도입(SC 재발사 가드 작업)에 따른 추가 검증 T1~T7:
+  T1. ALERT 지속 30틱 동안 ARM_CMD 가 정확히 1회만.
+  T2. NOMINAL 수신 시 DISARM_CMD 정확히 1회.
+  T3. ALERT->NOMINAL->ALERT 순환에서 ARM 2회, DISARM 2회(핵심 실패 모드).
+  T4. HOLD 중 ALERT 도착 -> TRACKING 복귀 + ARM 재발행(D2=(b), counter 유지 확인).
+  T5. D4=(a) 최소 재ARM 간격(1.0초) 이내 재ARM 억제, 통과 후 정상 발행.
+  T6. passive=True 전체 사이클(ARM+DISARM) -- commands_sent 비고 suppressed 만 쌓임.
+  T7. off vs shadow -- ARM/DISARM 포함 전체 사이클도 이벤트 시퀀스 바이트 단위 동일(검증3 확장 회귀).
 """
 from __future__ import annotations
 
@@ -241,6 +250,183 @@ def check_t_sample_rx_integrity():
     return ok
 
 
+# ══════════════════════════════════════════════════════
+# SC 재발사 가드 + DISARM 검증 T1~T7
+# ══════════════════════════════════════════════════════
+def check_t1_single_arm():
+    print("=" * 70)
+    print("[verify_sc] 검증 T1: ALERT 지속 30틱 동안 ARM_CMD 정확히 1회만")
+    print("=" * 70)
+    core = sc.ScFsmCore(ai_gate_mode="off", passive=True)
+    t = 3000.0
+    core.on_alert(sc.AP_ALERT, t, fsm_pub_ts=t, t_sample_rx=t)
+    for i in range(30):
+        core.tick_control(t + 0.1 * i)
+    n_arm = core.commands_suppressed.count("ARM_CMD")
+    n_offboard = core.commands_suppressed.count("OFFBOARD_MODE_CMD")
+    print(f"30틱 후 commands_suppressed: {core.commands_suppressed}")
+    print(f"ARM_CMD={n_arm}(기대 1) OFFBOARD_MODE_CMD={n_offboard}(기대 1)")
+    ok = (n_arm == 1 and n_offboard == 1)
+    print(f"검증 T1 종합: {ok}")
+    return ok
+
+
+def check_t2_single_disarm():
+    print("=" * 70)
+    print("[verify_sc] 검증 T2: NOMINAL 수신 시 DISARM_CMD 정확히 1회")
+    print("=" * 70)
+    core = sc.ScFsmCore(ai_gate_mode="off", passive=True)
+    t = 4000.0
+    core.on_alert(sc.AP_ALERT, t, fsm_pub_ts=t, t_sample_rx=t)
+    for i in range(11):
+        core.tick_control(t + 0.1 * i)
+    ev = core.on_alert(sc.AP_NOMINAL, t + 2, fsm_pub_ts=t + 2, t_sample_rx=t + 2)
+    n_disarm = core.commands_suppressed.count("DISARM_CMD")
+    print(f"NOMINAL 수신 이벤트: {ev} (기대: 'DISARM_CMD' 포함)")
+    print(f"DISARM_CMD 발생 횟수: {n_disarm} (기대: 1)")
+    ok = (n_disarm == 1 and "DISARM_CMD" in ev)
+    print(f"검증 T2 종합: {ok}")
+    return ok
+
+
+def check_t3_alert_nominal_alert_cycle():
+    print("=" * 70)
+    print("[verify_sc] 검증 T3: ALERT->NOMINAL->ALERT 순환 -- ARM 2회, DISARM 2회 (핵심 실패 모드)")
+    print("=" * 70)
+    core = sc.ScFsmCore(ai_gate_mode="off", passive=True, min_rearm_interval_sec=1.0)
+    t = 5000.0
+    core.on_alert(sc.AP_ALERT, t, fsm_pub_ts=t, t_sample_rx=t)
+    for i in range(11):
+        core.tick_control(t + 0.1 * i)
+    core.on_alert(sc.AP_NOMINAL, t + 2, fsm_pub_ts=t + 2, t_sample_rx=t + 2)
+    # 재ARM 가드(1.0초)를 넉넉히 넘긴 뒤 재개(합법적 재ALERT 시나리오 -- IDLE 경유, D2(b) 아님)
+    core.on_alert(sc.AP_ALERT, t + 5, fsm_pub_ts=t + 5, t_sample_rx=t + 5)
+    for i in range(11):
+        core.tick_control(t + 5 + 0.1 * i)
+    core.on_alert(sc.AP_NOMINAL, t + 7, fsm_pub_ts=t + 7, t_sample_rx=t + 7)
+
+    n_arm = core.commands_suppressed.count("ARM_CMD")
+    n_disarm = core.commands_suppressed.count("DISARM_CMD")
+    print(f"commands_suppressed: {core.commands_suppressed}")
+    print(f"ARM_CMD={n_arm}(기대 2) DISARM_CMD={n_disarm}(기대 2)")
+    ok = (n_arm == 2 and n_disarm == 2)
+    print(f"검증 T3 종합: {ok}")
+    return ok
+
+
+def check_t4_hold_recovery_d2b():
+    print("=" * 70)
+    print("[verify_sc] 검증 T4: HOLD 중 ALERT 도착 -> TRACKING 복귀 + 재ARM (D2=(b), 방어적 코드경로)")
+    print("=" * 70)
+    core = sc.ScFsmCore(ai_gate_mode="off", passive=True, hold_duration_sec=3.0,
+                        min_rearm_interval_sec=1.0)
+    t = 6000.0
+    core.on_alert(sc.AP_ALERT, t, fsm_pub_ts=t, t_sample_rx=t)
+    for i in range(11):
+        core.tick_control(t + 0.1 * i)
+    core.on_alert(sc.AP_NOMINAL, t + 2, fsm_pub_ts=t + 2, t_sample_rx=t + 2)   # -> HOLD, DISARM
+    print(f"NOMINAL 후 상태: {core.state} (기대: HOLD)")
+    ok_hold = (core.state == sc.STATE_HOLD)
+
+    # HOLD_TIMEOUT(6초) 안, 재ARM 가드(1초)는 넘긴 시점에 재ALERT
+    ev = core.on_alert(sc.AP_ALERT, t + 3.5, fsm_pub_ts=t + 3.5, t_sample_rx=t + 3.5)
+    print(f"HOLD 중 재ALERT 이벤트: {ev} (기대: ['ALERT_TRIGGER'])")
+    ok_recover = (core.state == sc.STATE_TRACKING and ev == ["ALERT_TRIGGER"])
+
+    # counter 를 리셋하지 않았으므로(HOLD 동안 setpoint 스트리밍이 안 끊겨 PX4 2Hz 요건
+    # 이미 충족) 이미 >=10 -- 복귀 직후 첫 tick 에서 바로 재무장돼야 한다
+    ev2 = core.tick_control(t + 3.6)
+    print(f"복귀 직후 첫 tick_control: {ev2} "
+          f"(기대: ['OFFBOARD_MODE_CMD','ARM_CMD'] -- counter 유지로 즉시 재무장)")
+    ok_rearm = (ev2 == ["OFFBOARD_MODE_CMD", "ARM_CMD"])
+
+    ok = ok_hold and ok_recover and ok_rearm
+    print(f"검증 T4 종합: {ok}")
+    return ok
+
+
+def check_t5_rearm_guard():
+    print("=" * 70)
+    print("[verify_sc] 검증 T5: D4 -- 최소 재ARM 간격(1.0초) 이내 재ARM 억제, 통과 후 정상 발행")
+    print("=" * 70)
+    core = sc.ScFsmCore(ai_gate_mode="off", passive=True, min_rearm_interval_sec=1.0)
+    t = 7000.0
+    core.on_alert(sc.AP_ALERT, t, fsm_pub_ts=t, t_sample_rx=t)
+    for i in range(11):
+        core.tick_control(t + 0.1 * i)
+    core.on_alert(sc.AP_NOMINAL, t + 2, fsm_pub_ts=t + 2, t_sample_rx=t + 2)      # DISARM @ t+2
+    core.on_alert(sc.AP_ALERT, t + 2.3, fsm_pub_ts=t + 2.3, t_sample_rx=t + 2.3)  # 0.3초 후 재ALERT(가드 안)
+
+    ev_guard = core.tick_control(t + 2.4)   # counter 이미 >=10 이지만 가드(1.0s) 미경과(0.4s)
+    print(f"가드 구간(DISARM+0.4s) tick_control: {ev_guard} (기대: ['ARM_REARM_GUARD_SUPPRESS'])")
+    ok_suppress = (ev_guard == ["ARM_REARM_GUARD_SUPPRESS"])
+    n_arm_before = core.commands_suppressed.count("ARM_CMD")
+    ok_no_early_cmd = (n_arm_before == 1)   # 최초 1개뿐, 가드 구간에서 추가 발행 없음
+
+    ev_ok = core.tick_control(t + 2 + 1.1)   # DISARM 후 1.1초 -- 가드 통과
+    print(f"가드 통과 후(DISARM+1.1s) tick_control: {ev_ok} (기대: ['OFFBOARD_MODE_CMD','ARM_CMD'])")
+    ok_pass = (ev_ok == ["OFFBOARD_MODE_CMD", "ARM_CMD"])
+
+    ok = ok_suppress and ok_no_early_cmd and ok_pass
+    print(f"검증 T5 종합: {ok}")
+    return ok
+
+
+def check_t6_passive_full_cycle():
+    print("=" * 70)
+    print("[verify_sc] 검증 T6: passive=True 전체 사이클(ARM+DISARM) -- "
+         "commands_sent 비고 suppressed 만 쌓임")
+    print("=" * 70)
+    core = sc.ScFsmCore(ai_gate_mode="off", passive=True)
+    t = 8000.0
+    core.on_alert(sc.AP_ALERT, t, fsm_pub_ts=t, t_sample_rx=t)
+    for i in range(11):
+        core.tick_control(t + 0.1 * i)
+    core.on_alert(sc.AP_NOMINAL, t + 2, fsm_pub_ts=t + 2, t_sample_rx=t + 2)
+    print(f"commands_sent: {core.commands_sent} (기대: 빈 리스트)")
+    print(f"commands_suppressed: {core.commands_suppressed} "
+         f"(기대: ['OFFBOARD_MODE_CMD','ARM_CMD','DISARM_CMD'])")
+    ok = (core.commands_sent == []
+         and core.commands_suppressed == ["OFFBOARD_MODE_CMD", "ARM_CMD", "DISARM_CMD"])
+    print(f"검증 T6 종합: {ok}")
+    return ok
+
+
+def check_t7_off_vs_shadow_with_arm_disarm():
+    print("=" * 70)
+    print("[verify_sc] 검증 T7: off vs shadow -- ARM/DISARM 포함 전체 사이클도 "
+         "이벤트 시퀀스 바이트 단위 동일 (검증3 확장 회귀)")
+    print("=" * 70)
+
+    def _drive(core, feed_verdicts):
+        t = 9000.0
+        hist = []
+        if feed_verdicts:
+            core.on_ai_verdict(0.5)
+        for ev in core.on_alert(sc.AP_PRE_ALERT, t, fsm_pub_ts=t - 0.01, t_sample_rx=t - 0.02):
+            hist.append((ev, core.state))
+        if feed_verdicts:
+            core.on_ai_verdict(0.6)
+        for ev in core.on_alert(sc.AP_ALERT, t + 0.9, fsm_pub_ts=t + 0.89, t_sample_rx=t + 0.88):
+            hist.append((ev, core.state))
+        for i in range(11):
+            for ev in core.tick_control(t + 0.9 + 0.1 * i):
+                hist.append((ev, core.state))
+        for ev in core.on_alert(sc.AP_NOMINAL, t + 3.0, fsm_pub_ts=t + 2.99, t_sample_rx=t + 2.98):
+            hist.append((ev, core.state))
+        return hist
+
+    core_off = sc.ScFsmCore(ai_gate_mode="off", passive=True)
+    core_shadow = sc.ScFsmCore(ai_gate_mode="shadow", passive=True)
+    hist_off = _drive(core_off, feed_verdicts=False)
+    hist_shadow = _drive(core_shadow, feed_verdicts=True)
+    print(f"off    이력: {hist_off}")
+    print(f"shadow 이력: {hist_shadow}")
+    ok = (hist_off == hist_shadow)
+    print(f"검증 T7 종합(ARM/DISARM 포함 바이트 단위 동일): {ok}")
+    return ok
+
+
 def main():
     r2 = check_state_mapping()
     r3 = check_off_vs_shadow()
@@ -248,10 +434,19 @@ def main():
     r5 = check_passive()
     r6 = check_full_replay_idle_to_tracking()
     r7 = check_t_sample_rx_integrity()
+    t1 = check_t1_single_arm()
+    t2 = check_t2_single_disarm()
+    t3 = check_t3_alert_nominal_alert_cycle()
+    t4 = check_t4_hold_recovery_d2b()
+    t5 = check_t5_rearm_guard()
+    t6 = check_t6_passive_full_cycle()
+    t7 = check_t7_off_vs_shadow_with_arm_disarm()
     print("=" * 70)
     print(f"[verify_sc] 종합: 상태매핑={r2} off/shadow동일={r3} gate={r4} passive={r5} "
           f"전구간216회={r6} t_sample_rx무변조={r7}")
-    print(f"[verify_sc] 전체 통과: {all([r2, r3, r4, r5, r6, r7])}")
+    print(f"[verify_sc] T1~T7: 단일ARM={t1} 단일DISARM={t2} 순환2/2={t3} "
+          f"HOLD복귀재ARM={t4} 재ARM가드={t5} passive전체사이클={t6} off/shadow확장={t7}")
+    print(f"[verify_sc] 전체 통과: {all([r2, r3, r4, r5, r6, r7, t1, t2, t3, t4, t5, t6, t7])}")
 
 
 if __name__ == "__main__":
