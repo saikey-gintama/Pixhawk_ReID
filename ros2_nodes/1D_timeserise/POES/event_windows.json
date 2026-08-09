@@ -1,0 +1,38 @@
+{
+  "generated_at": "2026-08-09T02:04:12.098820+00:00",
+  "detector": "metop03",
+  "primary_channel": "omni_p6",
+  "pad_before_days": 10,
+  "pad_after_days": 7,
+  "windows": {
+    "strong": {
+      "event_id": 2,
+      "onset_time": "2022-01-20T06:45:00+00:00",
+      "peak_count": 1152.03,
+      "start": "2022-01-10",
+      "end": "2022-01-27",
+      "criterion": "peak_count 최댓값(완결 이벤트 중 가장 강한 SPE)"
+    },
+    "weak": {
+      "event_id": 55,
+      "onset_time": "2024-01-22T06:15:00+00:00",
+      "peak_count": 0.73,
+      "start": "2024-01-12",
+      "end": "2024-01-29",
+      "criterion": "peak_count 최솟값(완결 이벤트 중 가장 약한 SPE, 경계 검출 사례)"
+    },
+    "cluster": {
+      "event_id": 4,
+      "onset_time": "2022-03-28T10:30:00+00:00",
+      "n_events_in_window": 3,
+      "member_event_ids": [
+        4,
+        5,
+        6
+      ],
+      "start": "2022-03-18",
+      "end": "2022-04-04",
+      "criterion": "고정 [onset-10d, onset+7d] 창에 완결 이벤트가 3개(자기 포함) 들어오는 최다밀집 기준 이벤트"
+    }
+  }
+}
