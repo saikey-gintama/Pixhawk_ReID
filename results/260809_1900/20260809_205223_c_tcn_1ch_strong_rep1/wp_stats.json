@@ -1,0 +1,8 @@
+{
+  "n_ticks_total": 1633,
+  "n_bg_warmup_ticks": 96,
+  "bg_warmup_end_ts": 1641859200.0,
+  "channels": [
+    "omni_p6"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "scenario": "a_idle",
+  "window": "none",
+  "rep": 1,
+  "warmup_speed": 0.0,
+  "active_speed": 0.0,
+  "instrumented": false,
+  "ai_gate_mode": null,
+  "passive": null,
+  "hold_scale": null,
+  "n_channels_requested": null,
+  "tegra_interval_ms": 1000.0,
+  "tegra_prestart_sec_excluded": 30.0,
+  "power_cpu_caveat": "가속 리플레이 tegrastats 전력/CPU% 는 비행 전력 아님. 1x 배속 SITL 실증 별도(4.4절). per-op 에너지는 bench_micro 버스트(S6).",
+  "with_ros": false,
+  "duration_sec": 300
+}

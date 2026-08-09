@@ -1,0 +1,14 @@
+{
+  "n_ticks_total": 1627,
+  "n_ticks_gate_open": 165,
+  "n_ticks_alert_open": 24,
+  "n_transitions_by_type": {
+    "NOMINAL->PRE_ALERT": 123,
+    "PRE_ALERT->NOMINAL": 112,
+    "PRE_ALERT->ALERT": 11,
+    "ALERT->NOMINAL": 11
+  },
+  "evs_suppressed_total": {},
+  "n_downlinked_alerts": 0,
+  "downlink_queue": []
+}

@@ -1,0 +1,44 @@
+{
+  "torch_threads": 1,
+  "core_pin": {
+    "pinned": true,
+    "core": 0,
+    "reason": null
+  },
+  "clocks": {
+    "nvpmodel_mode": "NV Power Mode: 15W\n0",
+    "jetson_clocks_status": "SOC family:tegra234  Machine:NVIDIA Jetson Orin Nano Developer Kit\nError: Run this script(/usr/bin/jetson_clocks) as a root user",
+    "nvpmodel_available": true,
+    "jetson_clocks_available": true
+  },
+  "device": "cpu",
+  "python_version": "3.10.12 (main, Mar  3 2026, 11:56:32) [GCC 11.4.0]",
+  "torch_version": "2.3.0",
+  "n_ticks_prepared": 3000,
+  "n_valid_samples": 2780,
+  "repeats": {
+    "M1_resample_ms": 10000,
+    "M2_z_eval_ms": 100000,
+    "M3_fsm_eval_ms": 100000,
+    "M4_bg_update_ms": 10000,
+    "M7_preproc_ms": 10000,
+    "M8_infer_ms": 1000,
+    "zbuf_update_ms": 100000,
+    "serialize_ms": 10000
+  },
+  "warmup_excluded": {
+    "M1_resample_ms": 100,
+    "M2_z_eval_ms": 100,
+    "M3_fsm_eval_ms": 100,
+    "M4_bg_update_ms": 100,
+    "M7_preproc_ms": 100,
+    "M8_infer_ms": 20,
+    "zbuf_update_ms": 100,
+    "serialize_ms": 100
+  },
+  "burst_mode_run": true,
+  "tegrastats_available": true,
+  "smoke": false,
+  "os_name": "posix",
+  "has_resource_module": true
+}

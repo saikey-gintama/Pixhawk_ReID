@@ -1,0 +1,57 @@
+{
+  "model_load_ms": 21.3968,
+  "warmup_ms": [
+    4.519,
+    2.3522,
+    2.1785,
+    2.191,
+    2.1051,
+    2.1635,
+    2.2185,
+    2.1111,
+    2.1069,
+    2.0684,
+    2.0774,
+    2.0985,
+    2.1324,
+    2.1088,
+    2.1357,
+    2.0577,
+    2.1154,
+    2.0113,
+    2.0895,
+    2.1005
+  ],
+  "warmup_iters": 20,
+  "torch_threads": 1,
+  "device": "cpu",
+  "folds_mode": "single",
+  "fold": 0,
+  "n_models": 1,
+  "channels": [
+    "omni_p6"
+  ],
+  "manifest": {
+    "input_size": 1,
+    "n_classes": 2,
+    "label_names": [
+      "quiet",
+      "event"
+    ],
+    "channels": [
+      "omni_p6"
+    ],
+    "window": 14,
+    "num_channels": [
+      16,
+      16,
+      16
+    ],
+    "kernel_size": 3,
+    "dropout": 0.2,
+    "n_folds": 5,
+    "detector": "metop03",
+    "binary": true,
+    "forecast_min": 0
+  }
+}
