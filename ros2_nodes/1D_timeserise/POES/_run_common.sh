@@ -131,18 +131,47 @@ poll_replay_done() {
   sleep 3   # active 구간 잔여 메시지가 하류 노드 로그에 flush 될 시간
 }
 
-# shutdown_nodes <pid...>  -- 역순 상관없이 한꺼번에 SIGINT -> 3초 -> SIGKILL(md 지시 그대로)
+# _wait_pid_timeout <pid> <timeout_sec> -- pid 가 끝날 때까지 최대 timeout_sec 초
+# kill -0 로 폴링하며 그 PID 만 기다린다. 시간 내에 안 죽으면 SIGKILL 을 한 번
+# 더 시도하고 반환한다(절대 블록하지 않음).
+_wait_pid_timeout() {
+  local pid="$1" timeout="$2" waited=0
+  [[ -z "$pid" || "$pid" == "0" ]] && return 0
+  while kill -0 "$pid" 2>/dev/null; do
+    if (( waited >= timeout )); then
+      kill -KILL "$pid" 2>/dev/null || true
+      break
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  wait "$pid" 2>/dev/null || true
+}
+
+# shutdown_nodes <pid...>  -- 역순 상관없이 한꺼번에 SIGINT -> 3초 -> SIGKILL(md 지시
+# 그대로), 그 다음 넘겨받은 PID 들만 개별 타임아웃으로 기다린다.
+# 인자 없는 `wait` 은 쓰지 않는다 -- 이 함수 호출 시점엔 tegrastats(TEGRA_PID)가
+# 아직 살아있는데(죽이는 stop_tegrastats 는 이 함수 *다음*에 호출됨), 인자 없는
+# `wait` 은 셸의 백그라운드 잡을 전부 기다리므로 tegrastats 가 끝날 때까지
+# 무한 대기하는 버그가 있었다(수동 Ctrl+C 로 tegrastats 까지 함께 SIGINT 를
+# 받아야만 풀렸음).
 shutdown_nodes() {
   if [[ "$DRY_RUN" == "1" ]]; then
     echo "  [dry-run] 노드 종료(SIGINT -> 3s -> SIGKILL) 생략"
     return 0
   fi
   local pids=("$@")
+  if [[ ${#pids[@]} -eq 0 ]]; then
+    return 0
+  fi
   echo "  -- shutting down nodes: ${pids[*]} --"
   kill -INT "${pids[@]}" 2>/dev/null || true
   sleep 3
   kill -KILL "${pids[@]}" 2>/dev/null || true
-  wait 2>/dev/null || true
+  local pid
+  for pid in "${pids[@]}"; do
+    _wait_pid_timeout "$pid" 5
+  done
   sleep 2
 }
 
