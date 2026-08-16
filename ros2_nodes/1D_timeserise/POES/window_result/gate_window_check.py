@@ -62,7 +62,11 @@ from pathlib import Path
 
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# 이 스크립트는 window_result/ 로 옮겨져 있어 gate_persistence_sweep.py/event_windows.json
+# 은 한 단계 위(POES/)에 있다 -- sys.path/파일 경로는 부모 디렉터리를 보되, 출력(CSV)은
+# 이 스크립트가 실제로 있는 디렉터리(window_result/)에 그대로 쓴다.
+POES_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(POES_DIR))
 import gate_persistence_sweep as gps  # noqa: E402  -- compute_run_len, vp(verify_preproc) 재사용
 vp = gps.vp  # verify_preproc 모듈. gps가 이미 import해둔 것을 그대로 재사용(재-import 아님).
 
@@ -230,7 +234,7 @@ def main():
     open_idx = cnt.index[gate_open]
     print_yearly_monthly(open_idx, total_ticks, n_total_open)
 
-    win_path = Path(__file__).resolve().parent / "event_windows.json"
+    win_path = POES_DIR / "event_windows.json"   # POES/에 있음(window_result/에는 없음)
     windows = load_windows(win_path)
     jetson_runs = find_jetson_runs(vp.REPO)
     tbl = build_window_table(cnt, gate_open, windows, jetson_runs)
