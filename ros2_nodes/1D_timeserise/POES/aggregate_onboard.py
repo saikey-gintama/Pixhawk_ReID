@@ -12,9 +12,18 @@ S7 -- S5(노드 리플레이)와 S6(마이크로벤치)의 산출물을 읽어 �
 run_meta.json 이 없는 run 은 집계하지 않고 경고로만 남긴다 -- 측정 조건을 모르는
 수치는 논문에 못 쓴다(md 원칙).
 
-warm-up 제외: run_meta.json 의 n_bg_warmup_ticks_excluded 를 그대로 쓴다. log.csv
-앞부분에서 그만큼 잘라낸다. KSEM aggregate_resource.py 의 "타이머 간격 급변"
-휴리스틱은 재발명하지 않는다 -- 이미 wp_poes_node.py 가 실측해 run_meta 에 넣어뒀다.
+warm-up 제외: run_meta.json 의 n_bg_warmup_ticks_excluded(틱 단위) 를 log.csv(AP가
+매 틱 1행을 쓰는 틱 단위 파일) 앞부분에서 그만큼 행으로 잘라낸다. KSEM
+aggregate_resource.py 의 "타이머 간격 급변" 휴리스틱은 재발명하지 않는다 -- 이미
+wp_poes_node.py 가 실측해 run_meta 에 넣어뒀다.
+  ai_log.csv 는 다르다 -- "틱마다 1행"이 아니라 "게이트가 열린 틱에만 1행"을 쓰는
+  사건 단위 파일이라 같은 행 인덱스 트림을 쓰면 워밍업 틱 수만큼 활성화 기록
+  자체가 잘려나간다(실측으로 발견된 버그: c1ch 558행->6행, d3ch 436행->148행,
+  gate_window_check.py 로 원인 확인, 2026-08-16 수정). run_meta.json 의
+  bg_warmup_end_ts(워밍업이 끝난 시각) 로 phys_ts >= bg_warmup_end_ts 만 남기는
+  시각 기준 트림을 쓴다 -- 워밍업 중엔 bg가 NaN -> watch=STALE -> 카운터 동결이라
+  게이트가 열릴 수 없으므로 정상적으로는 0행이 제거돼야 한다(0이 아니면 run별
+  경고를 stdout에 낸다). bg_warmup_end_ts 가 없으면 트림하지 않고 전체를 쓴다.
 
 산출 4개:
   results/onboard_cost.csv      표1 -- 시나리오별(a/a'/b/c1ch/d3ch/e) M1~M10 + 전력/CPU/RAM
@@ -24,11 +33,16 @@ warm-up 제외: run_meta.json 의 n_bg_warmup_ticks_excluded 를 그대로 쓴�
 
 파생 상수(하드코딩 아님, 아래 이름 붙여 선언 + 출력 헤더에 기록):
   TICKS_PER_DAY=96(15분 격자 하루 틱 수), SAMPLES_PER_TICK=15(15분당 1분 샘플 수),
-  GATE_OPENINGS_PER_DAY=6.3, DUTY_CYCLE=0.0684
-    -- 이 둘은 S0.5(gate_persistence_sweep.py, N=2 확정 게이트 행)의 236,848틱
-       전 구간 통계에서 온 값이다. 젯슨 리플레이는 17일 구간 3개뿐이라 여기서
+  GATE_OPENINGS_PER_DAY=6.568, DUTY_CYCLE=0.0684
+    -- DUTY_CYCLE 은 S0.5(gate_persistence_sweep.py, N=2 확정 게이트 행)의 236,848틱
+       전 구간 통계(duty_cycle=0.0684)에서 그대로 온 값이다. GATE_OPENINGS_PER_DAY 는
+       duty_cycle x TICKS_PER_DAY(0.0684*96=6.568) 로 고정한다 -- 논문 4.6절 비용
+       체인·초록의 13.8ms/day(=6.568*2.101)와 일치하는 기준이며, gate_persistence_sweep.csv
+       의 n_invocations_day(실측 total_days 기준, 6.34 -- 데이터 공백 때문에 96/일보다
+       작게 나옴)와는 다른 값이다. 젯슨 리플레이는 17일 구간 3개뿐이라 여기서
        "하루 몇 번" 을 재추정하면 안 된다 -- 그래서 상수로 고정한다.
        (젯슨 리플레이=1회 비용 실측, S0.5=그 비용이 하루에 몇 번 나는지)
+       재계산 금지: duty_cycle x TICKS_PER_DAY 기준 고정값.
 """
 from __future__ import annotations
 
@@ -46,8 +60,11 @@ import pandas as pd
 # ══════════════════════════════════════════════════════
 TICKS_PER_DAY = 96              # 15분 격자 하루 틱 수 (24*60/15)
 SAMPLES_PER_TICK = 15           # 15분당 1분 원시 샘플 수 (M1 리샘플 입력 크기)
-GATE_OPENINGS_PER_DAY = 6.3     # S0.5 gate_persistence_sweep.csv N=2 행 n_invocations_day. 재계산 금지.
 DUTY_CYCLE = 0.0684             # S0.5 gate_persistence_sweep.csv N=2 행 duty_cycle(6.84%). 재계산 금지.
+GATE_OPENINGS_PER_DAY = 6.568   # duty_cycle x TICKS_PER_DAY 기준(0.0684*96=6.568). 재계산 금지.
+                                 # (gate_persistence_sweep.csv 의 n_invocations_day=6.337 아님 --
+                                 # 그건 실측 total_days 기준이라 데이터 공백만큼 더 작게 나온다.
+                                 # 논문 4.6절 비용 체인·초록 13.8ms/day 는 이 6.568 기준.)
 MIN_SAMPLES_FOR_P95 = 30        # 활성화 단위 표본이 이보다 적으면 p95 대신 "n<30"
 
 SCENARIO_LABELS = {
@@ -114,9 +131,32 @@ def load_csv_trimmed(rdir: Path, filename: str, meta: dict, ts_col: str = "phys_
     if df.empty or ts_col not in df.columns:
         return df
     df = df.sort_values(ts_col).reset_index(drop=True)
-    n_warmup = meta.get("n_bg_warmup_ticks_excluded")
-    if n_warmup is None or filename == "event_log.csv":
+
+    if filename == "event_log.csv":
         # event_log.csv 는 phys_ts 가 아니라 timestamp(벽시계) 라 틱 워밍업 트림 대상이 아님
+        return df
+
+    if filename == "ai_log.csv":
+        # ai_log.csv 는 "틱마다 1행"이 아니라 "게이트가 열린 틱에만 1행"을 쓰는 사건 단위
+        # 파일이다 -- log.csv 와 같은 행 인덱스(n_bg_warmup_ticks_excluded) 트림을 쓰면
+        # 워밍업 틱 수만큼 활성화 기록 자체가 잘려나간다(실측으로 발견된 버그, 모듈
+        # docstring 참고). bg_warmup_end_ts(워밍업이 끝난 벽시계) 이후 행만 남기는
+        # 시각 기준 트림을 쓴다 -- 워밍업 중엔 bg가 NaN -> watch=STALE -> 카운터 동결이라
+        # 게이트가 열릴 수 없으므로 정상적으로는 0행이 제거돼야 한다(0이 아니면 그 자체가
+        # 새 이상 신호이므로 run별로 경고를 낸다).
+        bg_warmup_end_ts = meta.get("bg_warmup_end_ts")
+        if bg_warmup_end_ts is None:
+            return df   # 워밍업 종료 시각을 모르면 트림하지 않고 전체를 쓴다
+        before = len(df)
+        trimmed = df[df[ts_col] >= bg_warmup_end_ts].reset_index(drop=True)
+        n_removed = before - len(trimmed)
+        flag = "" if n_removed == 0 else "  [!] 0이 아님 -- 워밍업 중 게이트가 열렸다는 뜻, 확인 필요"
+        print(f"[aggregate] {rdir.name}/ai_log.csv: bg_warmup_end_ts 트림으로 {n_removed}행 제거 "
+              f"({before} -> {len(trimmed)}행, 기대값 0){flag}")
+        return trimmed
+
+    n_warmup = meta.get("n_bg_warmup_ticks_excluded")
+    if n_warmup is None:
         return df
     return df.iloc[int(n_warmup):].reset_index(drop=True)
 
@@ -450,7 +490,7 @@ def build_measurement_note(runs: list[dict], bench: dict | None, warnings: list[
                  "연산 1회당 에너지는 버스트 모드(S6)에서만 유효하다.**\n")
     lines.append("**하루 비용(daily_ms/daily_energy)은 해석적으로 계산된 값이다 -- "
                  "젯슨은 1회 비용만 실측했고(S5/S6), 하루 몇 번 발생하는지는 "
-                 "S0.5 전 구간(236,848틱) 통계의 상수(6.3회/일, duty_cycle 6.84%)를 그대로 썼다.**\n")
+                 "S0.5 전 구간(236,848틱) duty_cycle(6.84%) x TICKS_PER_DAY(96) = 6.568회/일을 그대로 썼다.**\n")
 
     bmeta = (bench or {}).get("bench_meta.json", {})
     lines.append("## 플랫폼/환경")
@@ -563,7 +603,7 @@ def build_measurement_note(runs: list[dict], bench: dict | None, warnings: list[
 
     lines.append("## 파생 상수")
     lines.append(f"- TICKS_PER_DAY={TICKS_PER_DAY}, SAMPLES_PER_TICK={SAMPLES_PER_TICK}, "
-                 f"GATE_OPENINGS_PER_DAY={GATE_OPENINGS_PER_DAY}(S0.5 확정), "
+                 f"GATE_OPENINGS_PER_DAY={GATE_OPENINGS_PER_DAY}(duty_cycle x TICKS_PER_DAY 기준), "
                  f"DUTY_CYCLE={DUTY_CYCLE}(S0.5 확정)")
 
     return "\n".join(lines) + "\n"
@@ -604,7 +644,7 @@ def write_outputs(results_root: Path, result: dict) -> None:
     result["table2"].to_csv(results_root / "bench_summary.csv", index=False)
 
     header = (f"# TICKS_PER_DAY={TICKS_PER_DAY} SAMPLES_PER_TICK={SAMPLES_PER_TICK} "
-             f"GATE_OPENINGS_PER_DAY={GATE_OPENINGS_PER_DAY}(S0.5 확정, 재계산 금지) "
+             f"GATE_OPENINGS_PER_DAY={GATE_OPENINGS_PER_DAY}(duty_cycle x TICKS_PER_DAY 기준, 재계산 금지) "
              f"DUTY_CYCLE={DUTY_CYCLE}(S0.5 확정, 재계산 금지)\n")
     path3 = results_root / "derived_cost.csv"
     with open(path3, "w", encoding="utf-8", newline="") as f:

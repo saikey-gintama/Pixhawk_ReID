@@ -2,7 +2,7 @@
 
 **경고: 전력·CPU 는 가속 리플레이 값이며 비행 조건이 아니다. 연산 1회당 에너지는 버스트 모드(S6)에서만 유효하다.**
 
-**하루 비용(daily_ms/daily_energy)은 해석적으로 계산된 값이다 -- 젯슨은 1회 비용만 실측했고(S5/S6), 하루 몇 번 발생하는지는 S0.5 전 구간(236,848틱) duty_cycle(6.84%) x TICKS_PER_DAY(96) = 6.568회/일을 그대로 썼다.**
+**하루 비용(daily_ms/daily_energy)은 해석적으로 계산된 값이다 -- 젯슨은 1회 비용만 실측했고(S5/S6), 하루 몇 번 발생하는지는 S0.5 전 구간(236,848틱) 통계의 상수(6.3회/일, duty_cycle 6.84%)를 그대로 썼다.**
 
 ## 플랫폼/환경
 - torch_threads: 1
@@ -18,7 +18,7 @@
 
 ## 배속
 - warm-up/active 배속 조합: ['(0.0, 0.0)', '(7200.0, 7200.0)']
-- speed_sanity(1800x vs 7200x): D:\VS_code\Pixhawk_ReID\results\260809_2225\speed_sanity.csv: PASS (행별 rel_diff: [{'metric': 'M1', 'rel_diff': 0.0546032357473035, 'pass': True}, {'metric': 'M2', 'rel_diff': 0.0557142857142857, 'pass': True}, {'metric': 'M3', 'rel_diff': 0.0694444444444443, 'pass': True}, {'metric': 'M5', 'rel_diff': 0.1065830721003135, 'pass': True}])
+- speed_sanity(1800x vs 7200x): ..\..\..\results\260809_2225\speed_sanity.csv: PASS (행별 rel_diff: [{'metric': 'M1', 'rel_diff': 0.0546032357473035, 'pass': True}, {'metric': 'M2', 'rel_diff': 0.0557142857142857, 'pass': True}, {'metric': 'M3', 'rel_diff': 0.0694444444444443, 'pass': True}, {'metric': 'M5', 'rel_diff': 0.1065830721003135, 'pass': True}])
 
 ## warm-up 제외
 - 배경 워밍업 제외 틱 수(run_meta 실측값, run별): [96]
@@ -28,9 +28,9 @@
 - 시나리오 a: n_runs=3, n_ticks_active=0, n_activations=0
 - 시나리오 a': n_runs=3, n_ticks_active=0, n_activations=0
 - 시나리오 b: n_runs=6, n_ticks_active=9222, n_activations=0
-- 시나리오 c1ch: n_runs=6, n_ticks_active=9214, n_activations=558
-- 시나리오 d3ch: n_runs=3, n_ticks_active=4611, n_activations=436
-- 시나리오 e: n_runs=3, n_ticks_active=4599, n_activations=288
+- 시나리오 c1ch: n_runs=6, n_ticks_active=9214, n_activations=6
+- 시나리오 d3ch: n_runs=3, n_ticks_active=4611, n_activations=148
+- 시나리오 e: n_runs=3, n_ticks_active=4599, n_activations=6
 - 벤치 반복 수: {'M1_resample_ms': 10000, 'M2_z_eval_ms': 100000, 'M3_fsm_eval_ms': 100000, 'M4_bg_update_ms': 10000, 'M7_preproc_ms': 10000, 'M8_infer_ms': 1000, 'zbuf_update_ms': 100000, 'serialize_ms': 10000}
 - 벤치 워밍업 제외 수: {'M1_resample_ms': 100, 'M2_z_eval_ms': 100, 'M3_fsm_eval_ms': 100, 'M4_bg_update_ms': 100, 'M7_preproc_ms': 100, 'M8_infer_ms': 20, 'zbuf_update_ms': 100, 'serialize_ms': 100}
 
@@ -50,4 +50,4 @@
 - 20260809_233703_b_fsm_strong_repspeedsanity7200x: run_meta.json 없음 -- 집계에서 제외
 
 ## 파생 상수
-- TICKS_PER_DAY=96, SAMPLES_PER_TICK=15, GATE_OPENINGS_PER_DAY=6.568(duty_cycle x TICKS_PER_DAY 기준), DUTY_CYCLE=0.0684(S0.5 확정)
+- TICKS_PER_DAY=96, SAMPLES_PER_TICK=15, GATE_OPENINGS_PER_DAY=6.3(S0.5 확정), DUTY_CYCLE=0.0684(S0.5 확정)
