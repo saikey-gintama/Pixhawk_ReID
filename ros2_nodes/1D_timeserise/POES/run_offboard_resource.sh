@@ -1,19 +1,32 @@
 #!/usr/bin/env bash
 # ============================================================================
 # run_offboard_resource.sh -- S5 시나리오 (e) end-to-end: wp + ap + ai + sc
-#   기본(--active 없음): --ai-gate shadow 로 돈다(md 명시). shadow 는 제어 경로가
-#   off 와 바이트 단위로 동일하므로(S4 검증 ③) DeltaPower 가 TCN 비용만 분리한다.
-#   gate 모드는 이 기본 경로의 비용 측정에 쓰지 않는다.
+#   기본(--active/--bench/--rehearse 없음): --ai-gate shadow 로 돈다(md 명시).
+#   shadow 는 제어 경로가 off 와 바이트 단위로 동일하므로(S4 검증 ③) DeltaPower 가
+#   TCN 비용만 분리한다. gate 모드는 이 기본 경로의 비용 측정에 쓰지 않는다.
 #
 # 3구간 x 1rep = 3 run(추가 rep 없음 -- md 는 (b)(c)에만 추가 rep 지시).
 #
 # 기동 순서: 하류 먼저(sc -> ai -> ap -> wp).
 #
-# --active: 실기 오프보드 실증(ARM/Offboard 전환 + DISARM, SC 재발사 가드 작업).
-#   --active 없이 실행한 동작(노드 인자/배속/구간/run_meta)은 기존과 바이트 단위로
-#   동일하다(비용 측정 (e) 행과의 비교 가능성 보존). --active 는 별도 태그
-#   (e_offboard_active_*)로 결과 폴더를 분리하고 별도 --extra-json 필드로 표시돼
-#   집계에서 섞이지 않는다.
+# --active/--bench/--rehearse 는 서로 배타적인 별도 모드다(sc_offboard_node.py 의
+# --land-before-disarm 기본 on(D3)/--setpoint-mode/--bench-thrust/--no-px4 도입 반영).
+# 셋 다 없는 기본 경로(비용 측정용, 시나리오 e, 논문 4.6절 Table 10)는 노드 인자·
+# 배속·구간·태그·run_meta 가 지금과 바이트 단위로 동일하게 유지된다.
+#   --active   : 실기 오프보드 실증(ARM/Offboard 전환 + DISARM, position 셋포인트).
+#                기본은 NAV_LAND -> 착륙확인(vehicle_land_detected)/타임아웃 뒤
+#                DISARM 이다(D3 -- 더 이상 착륙 없이 자유낙하하지 않는다).
+#   --bench    : 실기 벤치 시연(!! 프로펠러 반드시 탈거 !!). attitude 셋포인트를
+#                써서 로컬 위치 추정 없이도(GPS/광류/VIO 없는 실내) Offboard 진입/
+#                ARM 이 거부되지 않는다(실측: pre_flight_checks_pass=false 확인됨).
+#                BENCH_THRUST 환경변수로 thrust 크기 조절(기본 0.1).
+#   --rehearse : 드론/PX4 미연결 리허설(--no-px4). 명령은 event_log.csv 에 기록만
+#                되고 실제로는 안 나간다(안전 확인 불필요). 착륙확인 콜백이 없어
+#                항상 --land-timeout-sec(여기선 2초로 단축)로 DISARM 한다.
+#                tegrastats 는 켜지 않는다(전력 측정 대상 아님).
+#   각 모드는 별도 태그(e_offboard_active_*/e_offboard_bench_*/e_offboard_rehearse_*)
+#   로 결과 폴더를 분리하고 run_meta 의 --extra-json 필드로도 구분돼 기본 경로의
+#   집계와 섞이지 않는다.
 #   기본 창은 strong 으로 좁힌다(데이터 기반 확인: weak 창은 전 구간에서 ALERT 가
 #   한 번도 안 떠 ARM 자체가 안 나온다 -- ONLY_WINDOW 로 다른 창을 명시하면 존중).
 #   기본 배속(ACTIVE_SPEED=60)/구간(ACTIVE_SPAN_HOURS=10)도 데이터 기반 권고값 --
@@ -23,8 +36,12 @@
 #   bash run_offboard_resource.sh
 #   bash run_offboard_resource.sh --smoke
 #   bash run_offboard_resource.sh --dry-run
-#   bash run_offboard_resource.sh --active            # 실기 ARM/DISARM 데모(안전 배너 확인 필요)
+#   bash run_offboard_resource.sh --active              # 실기 ARM/DISARM 데모(안전 배너)
 #   bash run_offboard_resource.sh --active --dry-run
+#   bash run_offboard_resource.sh --bench               # 실기 벤치(프로펠러 탈거, 안전 배너)
+#   BENCH_THRUST=0.15 bash run_offboard_resource.sh --bench
+#   bash run_offboard_resource.sh --rehearse            # PX4 미연결 리허설
+#   bash run_offboard_resource.sh --rehearse --dry-run
 # ============================================================================
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -40,23 +57,38 @@ ONLY_WINDOW="${ONLY_WINDOW:-}"
 CHANNELS="omni_p6"
 RUN_NAME="omni_p6_binary"
 ACTIVE_RUN=0
+BENCH_RUN=0
+REHEARSE_RUN=0
 ACTIVE_SPAN_HOURS="${ACTIVE_SPAN_HOURS:-10}"   # strong 창 실측 기준(2사이클, onset+8.5h 필요)+여유
+BENCH_THRUST="${BENCH_THRUST:-0.1}"            # --bench 전용(attitude thrust_body 크기)
 
 for arg in "$@"; do
   case "$arg" in
-    --smoke)   SMOKE=1; ONLY_WINDOW="strong" ;;
-    --dry-run) DRY_RUN=1 ;;
-    --active)  ACTIVE_RUN=1 ;;
+    --smoke)    SMOKE=1; ONLY_WINDOW="strong" ;;
+    --dry-run)  DRY_RUN=1 ;;
+    --active)   ACTIVE_RUN=1 ;;
+    --bench)    BENCH_RUN=1 ;;
+    --rehearse) REHEARSE_RUN=1 ;;
     *) echo "unknown arg: $arg" >&2; exit 1 ;;
   esac
 done
 
-if [[ "$ACTIVE_RUN" == "1" && "$SMOKE" == "1" ]]; then
-  echo "ERROR: --active 와 --smoke 는 동시에 쓸 수 없습니다." >&2
+_N_MODES=$((ACTIVE_RUN + BENCH_RUN + REHEARSE_RUN))
+if [[ "$_N_MODES" -gt 1 ]]; then
+  echo "ERROR: --active/--bench/--rehearse 는 동시에 쓸 수 없습니다(모드 1개만 선택)." >&2
+  exit 1
+fi
+if [[ "$_N_MODES" -ge 1 && "$SMOKE" == "1" ]]; then
+  echo "ERROR: --active/--bench/--rehearse 와 --smoke 는 동시에 쓸 수 없습니다." >&2
   exit 1
 fi
 
-if [[ "$ACTIVE_RUN" == "1" ]]; then
+# 세 모드 모두 ai-gate gate 로 실제 ARM 을 트리거하므로 창/배속 데이터 기반 좁히기가
+# 똑같이 적용된다(SPECIAL_MODE 로 한 번만 판정).
+SPECIAL_MODE=0
+[[ "$_N_MODES" -ge 1 ]] && SPECIAL_MODE=1
+
+if [[ "$SPECIAL_MODE" == "1" ]]; then
   # 데이터 기반(causal FSM 전 구간 리플레이 실측): strong 은 onset+8.5h 안에 ARM->DISARM
   # 2사이클이 닫혀 가장 빠르다. weak 는 창 전체에서 ALERT 가 한 번도 안 뜬다(ARM 자체가
   # 안 남) -- 명시적으로 다른 창을 지정하지 않는 한 strong 으로 좁힌다.
@@ -68,16 +100,29 @@ fi
 
 ensure_event_windows
 
+# print_active_safety_banner <ACTIVE|BENCH> -- --active/--bench 공용. 착륙 시퀀스가
+# 기본 on(D3)임을 전제로 다시 썼다 -- 더 이상 "착륙 없이 자유낙하" 가 기본이 아니다.
 print_active_safety_banner() {
+  local mode_label="$1"
   echo "############################################################################"
-  echo "# ACTIVE 모드 -- 실기 오프보드 명령이 발행됩니다.                          #"
+  if [[ "$mode_label" == "BENCH" ]]; then
+    echo "# BENCH 모드 -- 실기 오프보드 명령이 발행됩니다(attitude 셋포인트).       #"
+  else
+    echo "# ACTIVE 모드 -- 실기 오프보드 명령이 발행됩니다(position 셋포인트).      #"
+  fi
   echo "#                                                                          #"
   echo "# - Offboard 전환 + ARM 명령이 실제로 FMU 로 나갑니다.                     #"
-  echo "# - 호버 셋포인트 고도: 1.5m.                                              #"
-  echo "# - !! 프로펠러 장착 상태에서 실행 금지 !!                                 #"
-  echo "#   착륙 시퀀스(LAND)가 없어 고도 1.5m 에서 그대로 DISARM 합니다 -- 자유낙하#"
-  echo "#   합니다(D3=(a), VEHICLE_CMD_NAV_LAND 미구현. sc_offboard_node.py 의      #"
-  echo "#   _publish_hover_setpoint()/_disarm() TODO 주석 참고).                   #"
+  if [[ "$mode_label" == "BENCH" ]]; then
+    echo "# - 셋포인트: attitude(수평 자세 + thrust_body z=-${BENCH_THRUST}).       #"
+    echo "# - !! 프로펠러 반드시 탈거 -- 모터가 실제로 회전합니다 !!                #"
+  else
+    echo "# - 셋포인트: position(호버 고도 1.5m). 유효한 로컬 위치 추정 필요.       #"
+    echo "# - !! 프로펠러 장착 상태에서 실외/구속 없이 실행 시 실제 비행함 !!       #"
+  fi
+  echo "# - 기본은 NAV_LAND -> 착륙확인(vehicle_land_detected) 또는                #"
+  echo "#   --land-timeout-sec(기본 20s) 타임아웃 뒤 DISARM 입니다(D3).            #"
+  echo "#   자유낙하 경고는 --no-land-before-disarm 을 쓸 때만 해당합니다 --       #"
+  echo "#   이 스크립트는 기본값(land-before-disarm on)을 그대로 씁니다.           #"
   echo "# - 이벤트가 HOLD(6초) 중 재개되면 재ARM 됩니다(D2=(b), 방어적 코드경로 --  #"
   echo "#   기본 설정(S=60, hold-scale=1.0)에서는 실데이터로 도달 안 함을 확인했지만#"
   echo "#   배속/hold-scale 을 바꾸면 ARM/DISARM 채터링이 날 수 있습니다(최소 재ARM #"
@@ -92,16 +137,30 @@ print_active_safety_banner() {
   fi
 
   if [[ "$DRY_RUN" != "1" ]]; then
-    read -r -p "type ACTIVE to continue: " _confirm
-    if [[ "$_confirm" != "ACTIVE" ]]; then
+    read -r -p "type $mode_label to continue: " _confirm
+    if [[ "$_confirm" != "$mode_label" ]]; then
       echo "확인 문자열 불일치 -- 중단." >&2
       exit 1
     fi
   fi
 }
 
+# print_rehearse_banner -- PX4 미연결이라 하드웨어 위험이 없으므로 확인 프롬프트 없음.
+print_rehearse_banner() {
+  echo "############################################################################"
+  echo "# REHEARSE 모드 -- PX4 미연결(--no-px4). 드론/FMU 로 명령이 나가지 않고    #"
+  echo "# event_log.csv 에 기록만 됩니다(ScFsmCore 판정은 실기와 동일하게 돕니다). #"
+  echo "# 착륙확인 콜백이 없어 항상 --land-timeout-sec 2s 로 강제 DISARM 합니다.   #"
+  echo "# tegrastats 는 켜지 않습니다(전력 측정 대상 아님).                        #"
+  echo "############################################################################"
+}
+
 if [[ "$ACTIVE_RUN" == "1" ]]; then
-  print_active_safety_banner
+  print_active_safety_banner "ACTIVE"
+elif [[ "$BENCH_RUN" == "1" ]]; then
+  print_active_safety_banner "BENCH"
+elif [[ "$REHEARSE_RUN" == "1" ]]; then
+  print_rehearse_banner
 else
   print_power_warning
 fi
@@ -127,7 +186,13 @@ print(f'{wall:.0f}')
 run_one() {
   local window="$1" rep="$2"
   local tag="e_offboard_${window}_rep${rep}"
-  [[ "$ACTIVE_RUN" == "1" ]] && tag="e_offboard_active_${window}_rep${rep}"
+  if [[ "$ACTIVE_RUN" == "1" ]]; then
+    tag="e_offboard_active_${window}_rep${rep}"
+  elif [[ "$BENCH_RUN" == "1" ]]; then
+    tag="e_offboard_bench_${window}_rep${rep}"
+  elif [[ "$REHEARSE_RUN" == "1" ]]; then
+    tag="e_offboard_rehearse_${window}_rep${rep}"
+  fi
   local rdir
   rdir="$(new_result_dir "$tag")"
   export RESULT_DIR="$rdir"
@@ -138,7 +203,7 @@ run_one() {
   else
     start="$(get_window_field "$window" start)"
     event="$(get_window_field "$window" onset_time)"
-    if [[ "$ACTIVE_RUN" == "1" ]]; then
+    if [[ "$SPECIAL_MODE" == "1" ]]; then
       # --end 만 onset+ACTIVE_SPAN_HOURS 로 좁힌다. --start 는 그대로 둬 배경 워밍업
       # (96틱, --start 기준 상대적)을 보존한다(1단계 Q6 확인).
       end="$(python3 -c "import pandas as pd; print((pd.Timestamp('$event') + pd.Timedelta(hours=$ACTIVE_SPAN_HOURS)).isoformat())")"
@@ -149,7 +214,7 @@ run_one() {
 
   echo "────────────────────────────────────────────────────────────"
   echo "  RUN: $tag  span=$start..$end  event=$event  RESULT_DIR=$rdir"
-  if [[ "$ACTIVE_RUN" == "1" ]]; then
+  if [[ "$SPECIAL_MODE" == "1" ]]; then
     local wall_sec=""
     [[ "$DRY_RUN" != "1" || -f "$EVENT_WINDOWS_JSON" ]] && \
       wall_sec="$(estimate_wallclock_sec "$start" "$event" "$end" "$WARMUP_SPEED" "$ACTIVE_SPEED")"
@@ -158,10 +223,20 @@ run_one() {
   fi
   echo "────────────────────────────────────────────────────────────"
 
-  start_tegrastats "$rdir"
+  if [[ "$REHEARSE_RUN" == "1" ]]; then
+    echo "  (REHEARSE) tegrastats 생략(전력 측정 대상 아님)."
+  else
+    start_tegrastats "$rdir"
+  fi
 
   local sc_args
-  if [[ "$ACTIVE_RUN" == "1" ]]; then
+  if [[ "$BENCH_RUN" == "1" ]]; then
+    sc_args=(--active --ai-gate gate --ai-threshold 0.85 --hold-scale 1.0 \
+             --setpoint-mode attitude --bench-thrust "$BENCH_THRUST")
+  elif [[ "$REHEARSE_RUN" == "1" ]]; then
+    sc_args=(--active --ai-gate gate --ai-threshold 0.85 --hold-scale 1.0 \
+             --no-px4 --land-timeout-sec 2)
+  elif [[ "$ACTIVE_RUN" == "1" ]]; then
     sc_args=(--active --ai-gate gate --ai-threshold 0.85 --hold-scale 1.0)
   else
     sc_args=(--passive --ai-gate shadow)
@@ -187,13 +262,31 @@ run_one() {
 
   poll_replay_done "$rdir" "$pid_wp"
   shutdown_nodes "$pid_wp" "$pid_ap" "$pid_ai" "$pid_sc"
-  stop_tegrastats "$rdir"
+  if [[ "$REHEARSE_RUN" != "1" ]]; then
+    stop_tegrastats "$rdir"
+  fi
 
-  if [[ "$ACTIVE_RUN" == "1" ]]; then
-    # _assemble_run_meta.py 는 parse_args()(known_args 아님)라 모르는 플래그에 죽는다
-    # (--active-run/--ai-threshold/--active-span-hours/--sc-guard-rev 는 지원 안 함) --
-    # --extra-json 으로만 넣는다(7단계 사전확인). --ai-gate/--passive/--hold-scale 은
-    # 이미 네이티브 지원이라 그대로 전달.
+  # _assemble_run_meta.py 는 parse_args()(known_args 아님)라 모르는 플래그에 죽는다
+  # (--active-run/--bench-run/--rehearse-run/--ai-threshold/--active-span-hours/
+  # --sc-guard-rev/--setpoint-mode/--bench-thrust/--no-px4/--land-timeout-sec 는
+  # 지원 안 함) -- 새 필드는 전부 --extra-json 으로만 넣는다(7단계 사전확인).
+  # --ai-gate/--passive/--hold-scale 은 이미 네이티브 지원이라 그대로 전달.
+  if [[ "$BENCH_RUN" == "1" ]]; then
+    write_run_meta "$rdir" "e_offboard" --window "$window" --rep "$rep" \
+      --warmup-speed "$WARMUP_SPEED" --active-speed "$ACTIVE_SPEED" --instrumented true \
+      --ai-gate gate --passive false --hold-scale 1.0 \
+      --tegra-interval-ms "$TEGRA_INTERVAL_MS" --tegra-prestart-sec "$TEGRA_PRESTART_SEC" \
+      --extra-json "{\"active_run\": true, \"bench_run\": true, \"setpoint_mode\": \"attitude\", \"bench_thrust\": $BENCH_THRUST, \"no_px4\": false, \"ai_threshold\": 0.85, \"active_span_hours\": $ACTIVE_SPAN_HOURS, \"sc_guard_rev\": \"v1_rearm_disarm_guard\"}"
+  elif [[ "$REHEARSE_RUN" == "1" ]]; then
+    # active_run:false(의도적) -- sc_offboard_node.py 는 --active 로 돌지만(내부
+    # passive=0), --no-px4 라 실제로는 아무 것도 안 나간다. 실기 결과와 절대 섞이면
+    # 안 되므로 "진짜 실기" 를 뜻하는 active_run 은 여기서 false 로 못박는다.
+    write_run_meta "$rdir" "e_offboard" --window "$window" --rep "$rep" \
+      --warmup-speed "$WARMUP_SPEED" --active-speed "$ACTIVE_SPEED" --instrumented true \
+      --ai-gate gate --passive false --hold-scale 1.0 \
+      --tegra-interval-ms "$TEGRA_INTERVAL_MS" --tegra-prestart-sec "$TEGRA_PRESTART_SEC" \
+      --extra-json "{\"active_run\": false, \"rehearse_run\": true, \"no_px4\": true, \"land_timeout_sec\": 2, \"ai_threshold\": 0.85, \"active_span_hours\": $ACTIVE_SPAN_HOURS, \"sc_guard_rev\": \"v1_rearm_disarm_guard\", \"tegrastats_skipped\": true}"
+  elif [[ "$ACTIVE_RUN" == "1" ]]; then
     write_run_meta "$rdir" "e_offboard" --window "$window" --rep "$rep" \
       --warmup-speed "$WARMUP_SPEED" --active-speed "$ACTIVE_SPEED" --instrumented true \
       --ai-gate gate --passive false --hold-scale 1.0 \
