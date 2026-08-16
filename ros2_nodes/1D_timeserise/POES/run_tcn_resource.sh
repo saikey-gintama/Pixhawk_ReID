@@ -30,6 +30,7 @@ WINDOWS=(strong weak cluster)
 REP_WINDOW="${REP_WINDOW:-cluster}"
 REP_EXTRA=3   # md 지시: "3회 더 반복" = 추가 3회(기본 1 + 추가 3 = 총 4), (c)만 해당
 ONLY_WINDOW="${ONLY_WINDOW:-}"
+GATE_N="${GATE_N:-2}"   # 게이트 지속성. 기본 2 = 기존 실행과 동일.
 
 for arg in "$@"; do
   case "$arg" in
@@ -82,23 +83,27 @@ run_one() {
   local pid_ai="$LAST_PID"
   sleep 2
 
-  run_cmd "AP" python3 "$NODE_DIR/ap_fsm_node.py" --channels "$CHANNELS" --dry-run
+  run_cmd "AP" python3 "$NODE_DIR/ap_fsm_node.py" --channels "$CHANNELS" --gate-n "$GATE_N" --dry-run
   local pid_ap="$LAST_PID"
   sleep 2
 
   run_cmd "WP" python3 "$NODE_DIR/wp_poes_node.py" \
     --channels "$CHANNELS" --data "$DATA" --start "$start" --end "$end" --event-time "$event" \
-    --warmup-speed "$WARMUP_SPEED" --replay-speed "$ACTIVE_SPEED"
+    --warmup-speed "$WARMUP_SPEED" --replay-speed "$ACTIVE_SPEED" --gate-n "$GATE_N"
   local pid_wp="$LAST_PID"
 
   poll_replay_done "$rdir" "$pid_wp"
   shutdown_nodes "$pid_wp" "$pid_ap" "$pid_ai"
   stop_tegrastats "$rdir"
 
+  # _assemble_run_meta.py 는 parse_args()(known_args 아님)라 모르는 플래그에 죽는다 --
+  # --gate-n 은 네이티브 지원이 아니므로 --extra-json 으로만 넣는다(run_offboard_resource.sh
+  # 의 active_run 과 같은 관례).
   write_run_meta "$rdir" "$SCENARIO" --window "$window" --rep "$rep" \
     --warmup-speed "$WARMUP_SPEED" --active-speed "$ACTIVE_SPEED" --instrumented true \
     --n-channels-arg "$N_CH" \
-    --tegra-interval-ms "$TEGRA_INTERVAL_MS" --tegra-prestart-sec "$TEGRA_PRESTART_SEC"
+    --tegra-interval-ms "$TEGRA_INTERVAL_MS" --tegra-prestart-sec "$TEGRA_PRESTART_SEC" \
+    --extra-json "{\"gate_n\": $GATE_N}"
 
   echo "  -- $tag complete: $rdir --"
   echo
