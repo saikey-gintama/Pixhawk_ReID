@@ -1,0 +1,49 @@
+{
+  "scenario": "e_offboard",
+  "window": "strong",
+  "rep": 1,
+  "warmup_speed": 7200.0,
+  "active_speed": 60.0,
+  "instrumented": true,
+  "ai_gate_mode": "gate",
+  "passive": "false",
+  "hold_scale": 1.0,
+  "n_channels_requested": null,
+  "tegra_interval_ms": 1000.0,
+  "tegra_prestart_sec_excluded": 30.0,
+  "power_cpu_caveat": "가속 리플레이 tegrastats 전력/CPU% 는 비행 전력 아님. 1x 배속 SITL 실증 별도(4.4절). per-op 에너지는 bench_micro 버스트(S6).",
+  "event_window_detail": {
+    "event_id": 2,
+    "onset_time": "2022-01-20T06:45:00+00:00",
+    "peak_count": 1152.03,
+    "start": "2022-01-10",
+    "end": "2022-01-27",
+    "criterion": "peak_count 최댓값(완결 이벤트 중 가장 강한 SPE)"
+  },
+  "n_ticks_total": 1028,
+  "n_bg_warmup_ticks_excluded": 96,
+  "bg_warmup_end_ts": 1641859200.0,
+  "channels": [
+    "omni_p6"
+  ],
+  "n_ticks_total_ap": 1028,
+  "n_ticks_gate_open": 65,
+  "n_ticks_alert_open": 2,
+  "n_transitions_by_type": {
+    "NOMINAL->PRE_ALERT": 59,
+    "PRE_ALERT->NOMINAL": 57,
+    "PRE_ALERT->ALERT": 2,
+    "ALERT->NOMINAL": 2
+  },
+  "n_downlinked_alerts": 0,
+  "evs_suppressed_total": {},
+  "active_run": false,
+  "rehearse_run": true,
+  "no_px4": true,
+  "land_timeout_sec": 2,
+  "ai_threshold": 0.85,
+  "active_span_hours": 10,
+  "sc_guard_rev": "v1_rearm_disarm_guard",
+  "tegrastats_skipped": true,
+  "_note_sample_size": "n_ticks_gate_open=65 -- M6~M9 p95 표본수와 같다. 너무 작으면(수십 미만) 구간/반복을 늘릴 것."
+}

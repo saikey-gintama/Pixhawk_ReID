@@ -1,0 +1,9 @@
+{
+  "n_ticks_total": 1621,
+  "n_ticks_gate_open": 0,
+  "n_ticks_alert_open": 0,
+  "n_transitions_by_type": {},
+  "evs_suppressed_total": {},
+  "n_downlinked_alerts": 0,
+  "downlink_queue": []
+}
